@@ -25,6 +25,11 @@ Parameters:
     Default: default
     MinLength: 1
 
+  MaxPricePerUnitHour:
+    Description: The maximum to bid per unit-hour, default is the reserve price for an m2.medium
+    Type: String
+    Default: "0.0209"
+
 Mappings:
 
   # These are the latest ECS optimized AMIs as of August 2017:
@@ -39,47 +44,18 @@ Mappings:
   # (note the AMI identifier is region specific)
 
   AWSRegion:
-    us-east-2:
-      AMI: ami-58f5db3d
-      Zones: 3
-    us-east-1:
-      AMI: ami-fad25980
-      Zones: 6
-    us-west-2:
-      AMI: ami-7114c909
-      Zones: 3
-    us-west-1:
-      AMI: ami-62e0d802
-      Zones: 2
-    eu-west-2:
-      AMI: ami-dbfee1bf
-      Zones: 2
-    eu-west-1:
-      AMI: ami-4cbe0935
-      Zones: 3
-    eu-central-1:
-      AMI: ami-05991b6a
-      Zones: 3
-    ap-northeast-2:
-      AMI: ami-7267c01c
-      Zones: 2
-    ap-northeast-1:
-      AMI: ami-56bd0030
-      Zones: 2
-    ap-southeast-2:
-      AMI: ami-14b55f76
-      Zones: 3
-    ap-southeast-1:
-      AMI: ami-1bdc8b78
-      Zones: 2
-    ca-central-1:
-      AMI: ami-918b30f5
-      Zones: 2
-
-Conditions:
-  Has6Zones: !Equals [ !FindInMap [AWSRegion, !Ref "AWS::Region", Zones], "6" ]
-  Has3Zones: !Equals [ !FindInMap [AWSRegion, !Ref "AWS::Region", Zones], "3" ]
-  Has2Zones: !Equals [ !FindInMap [AWSRegion, !Ref "AWS::Region", Zones], "2" ]
+    us-east-2: { AMI: ami-58f5db3d }
+    us-east-1: { AMI: ami-fad25980 }
+    us-west-2: { AMI: ami-7114c909 }
+    us-west-1: { AMI: ami-62e0d802 }
+    eu-west-2: { AMI: ami-dbfee1bf }
+    eu-west-1: { AMI: ami-4cbe0935 }
+    eu-central-1: { AMI: ami-05991b6a }
+    ap-northeast-2: { AMI: ami-7267c01c }
+    ap-northeast-1: { AMI: ami-56bd0030 }
+    ap-southeast-2: { AMI: ami-14b55f76 }
+    ap-southeast-1: { AMI: ami-1bdc8b78 }
+    ca-central-1: { AMI: ami-918b30f5 }
 
 Resources:
   VPCStack:
@@ -95,7 +71,9 @@ Resources:
         VPC: !GetAtt VPCStack.Outputs.VPC
         Subnets: !GetAtt VPCStack.Outputs.PrivateSubnets
         ECSCluster: !Ref ECSCluster
-        InstanceAMI: !FindInMap [AWSRegion, !Ref "AWS::Region", AMI]
+        AMI: !FindInMap [AWSRegion, !Ref "AWS::Region", AMI]
+        InitialCapacity: 0
+        MaxPricePerUnitHour: !Ref MaxPricePerUnitHour
 
   ECSExecutionRole:
     Type: AWS::IAM::Role
@@ -144,10 +122,8 @@ Resources:
      - ECSExecutionRole
      - ECSLogGroup
     Properties:
-      NetworkMode: awsvpc
+      NetworkMode: bridge
       ExecutionRoleArn: !Ref ECSExecutionRole
-      RequiresCompatibilities:
-        - "FARGATE"
       Cpu: 1024
       Memory: 2048
       ContainerDefinitions:
@@ -166,8 +142,22 @@ Resources:
              "awslogs-region": !Ref AWS::Region
              "awslogs-stream-prefix": "agent"
 
+  ECSAgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: 0
+      TaskDefinition: !Ref ECSAgentTaskDefinition
+      PlacementStrategies:
+        - Type: binpack
+          Field: cpu
+
 Outputs:
   Cluster:
     Description: A reference to the ECS cluster
     Value: !Ref ECSCluster
+
+  AgentService:
+    Description: The ECS Service for the Agent
+    Value: !Ref ECSAgentService
 

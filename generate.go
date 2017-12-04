@@ -25,8 +25,16 @@ Parameters:
     Description: The ECS Cluster to register with
     Type: String
 
-  InstanceAMI:
+  AMI:
     Description: The AMI to launch instances with
+    Type: String
+
+  InitialCapacity:
+    Description: The initial capacity for the spot fleet
+    Type: Number
+
+  MaxPricePerUnitHour:
+    Description: The maximum to bid per unit-hour
     Type: String
 
 Resources:
@@ -116,12 +124,13 @@ Resources:
       SpotFleetRequestConfigData:
         AllocationStrategy: lowestPrice
         IamFleetRole: !GetAtt SpotFleetIAMRole.Arn
-        TargetCapacity: 1
+		TargetCapacity: !Ref InitialCapacity
+		SpotPrice: !Ref MaxPricePerUnitHour
         LaunchSpecifications: {{range $spec := . }}
           - WeightedCapacity: {{ $spec.Weight }}
             IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
             InstanceType: {{ $spec.InstanceType }}
-            ImageId: !Ref InstanceAMI
+            ImageId: !Ref AMI
             NetworkInterfaces:
               - DeviceIndex: 0
                 SubnetId: !Select [ {{ .SubnetOffset }}, !Ref Subnets ]
@@ -139,6 +148,11 @@ Outputs:
     Description: The SpotFleet created
     Value: !Ref SpotFleet
 `
+
+const (
+	specsPerTemplate = 50
+	maxWeight        = 16
+)
 
 // We can only have 50 specifications in total. So we have sizes * availability zones. We choose different sets for
 // our different combinations to maximize our selections
@@ -214,8 +228,11 @@ func (r Region) SpecificationInstances() []SpecificationInstance {
 	// broad coverage across AZs
 	for _, spec := range r.Specifications {
 		for i := 0; i < r.Zones; i++ {
-			if len(specs) == 50 {
+			if len(specs) == specsPerTemplate {
 				return specs
+			}
+			if spec.Weight > maxWeight {
+				continue
 			}
 			i := SpecificationInstance{
 				Specification: spec,
