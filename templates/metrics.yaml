@@ -1,0 +1,109 @@
+Description: >
+  Buildkite Metrics Collector (buildkite-metrics v2.0.0)
+
+Parameters:
+  BuildkiteOrgSlug:
+    Description: Buildkite organization slug
+    Type: String
+    MinLength: 1
+
+  BuildkiteApiAccessToken:
+    Description: Buildkite API access token with read_pipelines, read_builds and read_agents (required for metrics)
+    Type: String
+    NoEcho: true
+    MinLength: 1
+
+  BuildkiteQueue:
+    Description: Queue name that agents will use, targeted in pipeline steps using "queue={value}"
+    Type: String
+    Default: default
+    MinLength: 1
+
+Mappings:
+  MetricsLambdaBucket:
+    us-east-1 : { Bucket: "buildkite-metrics" }
+    us-east-2 : { Bucket: "buildkite-metrics-us-east-2" }
+    us-west-1 : { Bucket: "buildkite-metrics-us-west-1" }
+    us-west-2 : { Bucket: "buildkite-metrics-us-west-2" }
+    eu-west-1 : { Bucket: "buildkite-metrics-eu-west-1" }
+    eu-west-2 : { Bucket: "buildkite-metrics-eu-west-2" }
+    eu-central-1 : { Bucket: "buildkite-metrics-eu-central-1" }
+    ap-northeast-1 : { Bucket: "buildkite-metrics-ap-northeast-1" }
+    ap-northeast-2 : { Bucket: "buildkite-metrics-ap-northeast-2" }
+    ap-southeast-1 : { Bucket: "buildkite-metrics-ap-southeast-1" }
+    ap-southeast-2 : { Bucket: "buildkite-metrics-ap-southeast-2" }
+    ap-south-1 : { Bucket: "buildkite-metrics-ap-south-1" }
+    sa-east-1 : { Bucket: "buildkite-metrics-sa-east-1" }
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+
+  LambdaExecutionPolicy:
+    DependsOn: LambdaExecutionRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AccessToCloudwatchForBuildkiteMetrics
+      Roles:
+      - !Ref LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - cloudwatch:PutMetricData
+          - autoscaling:SetInstanceHealth
+          Resource:
+          - "*"
+
+  BuildkiteMetricsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - LambdaExecutionRole
+    - LambdaExecutionPolicy
+    Properties:
+      Code:
+        S3Bucket: { 'Fn::FindInMap': [MetricsLambdaBucket, { Ref: 'AWS::Region' }, 'Bucket'] }
+        S3Key: "buildkite-metrics-2.0.0-lambda.zip"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Handler: handler.handle
+      Runtime: python2.7
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUILDKITE_TOKEN: !Ref BuildkiteApiAccessToken
+          BUILDKITE_ORG: !Ref BuildkiteOrgSlug
+          BUILDKITE_QUEUE: !Ref BuildkiteQueue
+
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt BuildkiteMetricsFunction.Arn
+          Id: "TargetBuildkiteMetricsFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: { Ref: BuildkiteMetricsFunction }
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn

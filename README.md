@@ -2,6 +2,6 @@
 
 This is an experimental version of our main AWS stack that makes use of ECS and Spot Fleets.
 
-A key part of the design is that it doesn't have to generate an AMI with Packer, so it keeps iteration quicker.
+## Design
 
-**Status: Not working yet**
+An AWS SpotFleet is used to run ECS Instances in a dedicated ECS cluster. There is service that runs Agents on specific hosts.

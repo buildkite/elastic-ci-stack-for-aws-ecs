@@ -30,6 +30,11 @@ Parameters:
     Type: String
     Default: "0.0209"
 
+  KeyName:
+    Description: The EC2 SSH Key to use for access to the bastion host and the CI instances
+    Type: String
+    Default: ""
+
 Mappings:
 
   # These are the latest ECS optimized AMIs as of August 2017:
@@ -43,7 +48,7 @@ Mappings:
   # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
   # (note the AMI identifier is region specific)
 
-  AWSRegion:
+  AWSRegionToAMI:
     us-east-2: { AMI: ami-58f5db3d }
     us-east-1: { AMI: ami-fad25980 }
     us-west-2: { AMI: ami-7114c909 }
@@ -66,14 +71,25 @@ Resources:
   SpotFleet:
     Type: "AWS::CloudFormation::Stack"
     Properties:
-      TemplateURL: !Sub "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/spotfleet-${AWS::Region}.yaml"
+      TemplateURL: !Sub "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/ecs-spotfleet.yaml"
       Parameters:
         VPC: !GetAtt VPCStack.Outputs.VPC
         Subnets: !GetAtt VPCStack.Outputs.PrivateSubnets
         ECSCluster: !Ref ECSCluster
-        AMI: !FindInMap [AWSRegion, !Ref "AWS::Region", AMI]
+        AMI: !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMI]
         InitialCapacity: 0
         MaxPricePerUnitHour: !Ref MaxPricePerUnitHour
+        KeyName: !Ref KeyName
+        CloudInitScript: https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/cloud.init
+
+  Metrics:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/metrics.yaml"
+      Parameters:
+        BuildkiteOrgSlug: !Ref BuildkiteOrgSlug
+        BuildkiteApiAccessToken: !Ref BuildkiteApiAccessToken
+        BuildkiteQueue: !Ref BuildkiteQueue
 
   ECSExecutionRole:
     Type: AWS::IAM::Role
@@ -124,7 +140,7 @@ Resources:
     Properties:
       NetworkMode: bridge
       ExecutionRoleArn: !Ref ECSExecutionRole
-      Cpu: 1024
+      Cpu: 512
       Memory: 2048
       ContainerDefinitions:
         - Name: buildkite-agent
@@ -151,6 +167,41 @@ Resources:
       PlacementStrategies:
         - Type: binpack
           Field: cpu
+
+  BastionHost:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      KeyName : !Ref KeyName
+      InstanceType: t2.nano
+      ImageId : !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMI]
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: [ !Ref BastionHostSecurityGroup ]
+          SubnetId: !GetAtt VPCStack.Outputs.PublicSubnet1
+      UserData:
+        'Fn::Base64': !Sub |
+          #!/bin/bash
+          exec > >(tee /var/log/user-data.log|logger -t user-data ) 2>&1
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-signal --region "${AWS::Region}" --stack "${AWS::StackName}" --resource "BastionHost" -e $?
+      Tags:
+        - Key: Name
+          Value: bastion-host
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+
+  BastionHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName} BastionHost Security Group
+      VpcId: !GetAtt VPCStack.Outputs.VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
 
 Outputs:
   Cluster:
