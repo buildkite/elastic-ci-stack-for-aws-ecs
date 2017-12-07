@@ -1,5 +1,5 @@
 Description: >
-  Buildkite Metrics Collector (buildkite-metrics v2.0.0)
+  Buildkite ECS Scaler
 
 Parameters:
   BuildkiteOrgSlug:
@@ -21,19 +21,19 @@ Parameters:
 
 Mappings:
   MetricsLambdaBucket:
-    us-east-1 : { Bucket: "buildkite-metrics" }
-    us-east-2 : { Bucket: "buildkite-metrics-us-east-2" }
-    us-west-1 : { Bucket: "buildkite-metrics-us-west-1" }
-    us-west-2 : { Bucket: "buildkite-metrics-us-west-2" }
-    eu-west-1 : { Bucket: "buildkite-metrics-eu-west-1" }
-    eu-west-2 : { Bucket: "buildkite-metrics-eu-west-2" }
-    eu-central-1 : { Bucket: "buildkite-metrics-eu-central-1" }
-    ap-northeast-1 : { Bucket: "buildkite-metrics-ap-northeast-1" }
-    ap-northeast-2 : { Bucket: "buildkite-metrics-ap-northeast-2" }
-    ap-southeast-1 : { Bucket: "buildkite-metrics-ap-southeast-1" }
-    ap-southeast-2 : { Bucket: "buildkite-metrics-ap-southeast-2" }
-    ap-south-1 : { Bucket: "buildkite-metrics-ap-south-1" }
-    sa-east-1 : { Bucket: "buildkite-metrics-sa-east-1" }
+    us-east-1 : { Bucket: "buildkite-ecs-scaler" }
+    us-east-2 : { Bucket: "buildkite-ecs-scaler-us-east-2" }
+    us-west-1 : { Bucket: "buildkite-ecs-scaler-us-west-1" }
+    us-west-2 : { Bucket: "buildkite-ecs-scaler-us-west-2" }
+    eu-west-1 : { Bucket: "buildkite-ecs-scaler-eu-west-1" }
+    eu-west-2 : { Bucket: "buildkite-ecs-scaler-eu-west-2" }
+    eu-central-1 : { Bucket: "buildkite-ecs-scaler-eu-central-1" }
+    ap-northeast-1 : { Bucket: "buildkite-ecs-scaler-ap-northeast-1" }
+    ap-northeast-2 : { Bucket: "buildkite-ecs-scaler-ap-northeast-2" }
+    ap-southeast-1 : { Bucket: "buildkite-ecs-scaler-ap-southeast-1" }
+    ap-southeast-2 : { Bucket: "buildkite-ecs-scaler-ap-southeast-2" }
+    ap-south-1 : { Bucket: "buildkite-ecs-scaler-ap-south-1" }
+    sa-east-1 : { Bucket: "buildkite-ecs-scaler-sa-east-1" }
 
 Resources:
   LambdaExecutionRole:
@@ -78,7 +78,7 @@ Resources:
     Properties:
       Code:
         S3Bucket: { 'Fn::FindInMap': [MetricsLambdaBucket, { Ref: 'AWS::Region' }, 'Bucket'] }
-        S3Key: "buildkite-metrics-2.0.0-lambda.zip"
+        S3Key: "buildkite-ecs-scaler-latest-lambda.zip"
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler.handle

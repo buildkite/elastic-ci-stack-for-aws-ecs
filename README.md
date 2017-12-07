@@ -8,7 +8,7 @@ The theory behind this is that there should be considerable cost savings.
 
 * An AWS SpotFleet is used to run ECS Instances in a dedicated ECS cluster.
 * An ECS Service is used to run our Agent via docker.
-* A Lambda is run on a schedule to adjust the capacity of the SpotFleet and the number of agents in the Service
+* A lambda ([ecs-agent-scaler](https://github.com/buildkite/buildkite-ecs-agent-scaler)) is run on a schedule to adjust the capacity of the SpotFleet and the number of agents in the Service
 * ECS Instances bootstrap via user-data from a vanilla Amazon ECS AMI
 
 ## Open Questions

@@ -211,7 +211,7 @@ func writeTemplate(filename string, specs []Specification) error {
 }
 
 func main() {
-	if err := writeTemplate("templates/ecs-spotfleet.yaml", allSpecs); err != nil {
+	if err := writeTemplate("templates/spotfleet.yaml", allSpecs); err != nil {
 		log.Fatal(err)
 	}
 }

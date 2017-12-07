@@ -35,6 +35,12 @@ Parameters:
     Type: String
     Default: ""
 
+  StackURLBase:
+    Description: The s3 url to load nested stacks from
+    Type: String
+    Default: "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/master/"
+
+
 Mappings:
 
   # These are the latest ECS optimized AMIs as of August 2017:
@@ -66,12 +72,12 @@ Resources:
   VPCStack:
     Type: "AWS::CloudFormation::Stack"
     Properties:
-      TemplateURL: https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/vpc.yaml
+      TemplateURL: !Sub "${StackURLBase}/vpc.yaml"
 
   SpotFleet:
     Type: "AWS::CloudFormation::Stack"
     Properties:
-      TemplateURL: !Sub "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/ecs-spotfleet.yaml"
+      TemplateURL: !Sub "${StackURLBase}/spotfleet.yaml"
       Parameters:
         VPC: !GetAtt VPCStack.Outputs.VPC
         Subnets: !GetAtt VPCStack.Outputs.PrivateSubnets
@@ -82,10 +88,10 @@ Resources:
         KeyName: !Ref KeyName
         CloudInitScript: https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/cloud.init
 
-  Metrics:
+  Scaler:
     Type: "AWS::CloudFormation::Stack"
     Properties:
-      TemplateURL: "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/metrics.yaml"
+      TemplateURL: !Sub "${StackURLBase}/scaler.yaml"
       Parameters:
         BuildkiteOrgSlug: !Ref BuildkiteOrgSlug
         BuildkiteApiAccessToken: !Ref BuildkiteApiAccessToken
