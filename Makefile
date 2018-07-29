@@ -10,3 +10,6 @@ sync:
 
 lint:
 	find templates -name '*.yaml' | xargs -n1 cfn-lint validate
+
+validate:
+	aws cloudformation validate-template --template-body file://templates/vpc.yaml

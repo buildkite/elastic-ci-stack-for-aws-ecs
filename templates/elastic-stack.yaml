@@ -38,8 +38,28 @@ Parameters:
   StackURLBase:
     Description: The s3 url to load nested stacks from
     Type: String
-    Default: "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/master/"
+    Default: "https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev"
 
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: The Availability Zones to use.
+    MinLength: 10
+
+  SubnetConfiguration:
+    Type: String
+    Description: "How to configure your subnets, must match the availability zones you provided. Note: NAT Gateways are charged at $0.045-0.095 an hour."
+    Default: "2 public subnets with public IP's"
+    AllowedValues:
+      - 2 public subnets with public IP's
+      - 3 public subnets with public IP's
+      - 4 public subnets with public IP's
+      - 5 public subnets with public IP's
+      - 6 public subnets with public IP's
+      - 2 private subnets + 2 public subnets with NAT Gateways for internet access
+      - 3 private subnets + 2 public subnets with NAT Gateways for internet access
+      - 4 private subnets + 2 public subnets with NAT Gateways for internet access
+      - 5 private subnets + 2 public subnets with NAT Gateways for internet access
+      - 6 private subnets + 2 public subnets with NAT Gateways for internet access
 
 Mappings:
 
@@ -55,24 +75,44 @@ Mappings:
   # (note the AMI identifier is region specific)
 
   AWSRegionToAMI:
-    us-east-2: { AMI: ami-58f5db3d }
-    us-east-1: { AMI: ami-fad25980 }
-    us-west-2: { AMI: ami-7114c909 }
-    us-west-1: { AMI: ami-62e0d802 }
-    eu-west-2: { AMI: ami-dbfee1bf }
-    eu-west-1: { AMI: ami-4cbe0935 }
-    eu-central-1: { AMI: ami-05991b6a }
-    ap-northeast-2: { AMI: ami-7267c01c }
-    ap-northeast-1: { AMI: ami-56bd0030 }
-    ap-southeast-2: { AMI: ami-14b55f76 }
-    ap-southeast-1: { AMI: ami-1bdc8b78 }
-    ca-central-1: { AMI: ami-918b30f5 }
+    us-east-2: { AMI: ami-901338f5 }
+    us-east-1: { AMI: ami-13401669 }
+    us-west-2: { AMI: ami-9a02a9e2 }
+    us-west-1: { AMI: ami-b3adacd3 }
+    eu-west-3: { AMI: ami-bd10a7c0 }
+    eu-west-2: { AMI: ami-acd5cdc8 }
+    eu-west-1: { AMI: ami-7827b301 }
+    eu-central-1: { AMI: ami-b378e8dc }
+    ap-northeast-2: { AMI: ami-d6f454b8 }
+    ap-northeast-1: { AMI: ami-af46dbc9 }
+    ap-southeast-2: { AMI: ami-b88e7cda }
+    ap-southeast-1: { AMI: ami-fec3b482 }
+    ap-south-1: { AMI: ami-c80b5fa7 }
+    sa-east-1: { AMI: ami-ca95d6a6 }
+
+  LambdaBucket:
+    us-east-1 : { Bucket: "buildkite-lambdas" }
+    us-east-2 : { Bucket: "buildkite-lambdas-us-east-2" }
+    us-west-1 : { Bucket: "buildkite-lambdas-us-west-1" }
+    us-west-2 : { Bucket: "buildkite-lambdas-us-west-2" }
+    eu-west-1 : { Bucket: "buildkite-lambdas-eu-west-1" }
+    eu-west-2 : { Bucket: "buildkite-lambdas-eu-west-2" }
+    eu-central-1 : { Bucket: "buildkite-lambdas-eu-central-1" }
+    ap-northeast-1 : { Bucket: "buildkite-lambdas-ap-northeast-1" }
+    ap-northeast-2 : { Bucket: "buildkite-lambdas-ap-northeast-2" }
+    ap-southeast-1 : { Bucket: "buildkite-lambdas-ap-southeast-1" }
+    ap-southeast-2 : { Bucket: "buildkite-lambdas-ap-southeast-2" }
+    ap-south-1 : { Bucket: "buildkite-lambdas-ap-south-1" }
+    sa-east-1 : { Bucket: "buildkite-lambdas-sa-east-1" }
 
 Resources:
   VPCStack:
     Type: "AWS::CloudFormation::Stack"
     Properties:
       TemplateURL: !Sub "${StackURLBase}/vpc.yaml"
+      Parameters:
+        AvailabilityZones: !Join [ ",", !Ref AvailabilityZones ]
+        SubnetConfiguration: !Ref SubnetConfiguration
 
   SpotFleet:
     Type: "AWS::CloudFormation::Stack"
@@ -86,16 +126,6 @@ Resources:
         InitialCapacity: 0
         MaxPricePerUnitHour: !Ref MaxPricePerUnitHour
         KeyName: !Ref KeyName
-        CloudInitScript: https://s3.amazonaws.com/buildkite-aws-stack-ecs-dev/cloud.init
-
-  Scaler:
-    Type: "AWS::CloudFormation::Stack"
-    Properties:
-      TemplateURL: !Sub "${StackURLBase}/scaler.yaml"
-      Parameters:
-        BuildkiteOrgSlug: !Ref BuildkiteOrgSlug
-        BuildkiteApiAccessToken: !Ref BuildkiteApiAccessToken
-        BuildkiteQueue: !Ref BuildkiteQueue
 
   ECSExecutionRole:
     Type: AWS::IAM::Role
@@ -141,8 +171,8 @@ Resources:
   ECSAgentTaskDefinition:
     Type: "AWS::ECS::TaskDefinition"
     DependsOn:
-     - ECSExecutionRole
-     - ECSLogGroup
+      - ECSExecutionRole
+      - ECSLogGroup
     Properties:
       NetworkMode: bridge
       ExecutionRoleArn: !Ref ECSExecutionRole
@@ -160,9 +190,9 @@ Resources:
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
-             "awslogs-group": !Ref ECSLogGroup
-             "awslogs-region": !Ref AWS::Region
-             "awslogs-stream-prefix": "agent"
+              "awslogs-group": !Ref ECSLogGroup
+              "awslogs-region": !Ref AWS::Region
+              "awslogs-stream-prefix": "agent"
 
   ECSAgentService:
     Type: AWS::ECS::Service
@@ -208,6 +238,85 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AccessToCloudwatchLogsForScalerLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource:
+                - !GetAtt ECSLogGroup.Arn
+            - Effect: Allow
+              Action:
+                - ecs:Describe*
+                - ecs:UpdateService
+              Resource:
+                - !Ref ECSAgentService
+                - !GetAtt ECSCluster.Arn
+            - Effect: Allow
+              Action:
+                - ec2:ModifySpotFleetRequest
+              Resource:
+                - "*"
+
+  ScalerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - LambdaExecutionRole
+    Properties:
+      Code:
+        S3Bucket: { 'Fn::FindInMap': [LambdaBucket, { Ref: 'AWS::Region' }, 'Bucket'] }
+        S3Key: "ecs-agent-scaler/builds/20/handler.zip"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Handler: handler.Handle
+      Runtime: python2.7
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUILDKITE_TOKEN: !Ref BuildkiteApiAccessToken
+          BUILDKITE_ORG: !Ref BuildkiteOrgSlug
+          BUILDKITE_QUEUE: !Ref BuildkiteQueue
+          BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
+          BUILDKITE_ECS_SERVICE: !Ref ECSAgentService
+          BUILDKITE_SPOT_FLEET: !GetAtt SpotFleet.Outputs.SpotFleet
+
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt ScalerFunction.Arn
+          Id: "TargetScalerFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: { Ref: ScalerFunction }
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
 
 Outputs:
   Cluster:

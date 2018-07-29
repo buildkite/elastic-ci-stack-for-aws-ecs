@@ -8,8 +8,7 @@ import (
 )
 
 const yamlTemplate = `
-Description: >
-  Spot Fleet for ECS
+Description: Spot Fleet for ECS
 
 Parameters:
   VPC:
@@ -39,11 +38,6 @@ Parameters:
   KeyName:
     Type: String
     Default: ""
-
-  CloudInitScript:
-    Description: A URL to a cloud init script to be included in the instance user-data
-    Type: String
-
 
 Conditions:
   HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
@@ -129,6 +123,30 @@ Resources:
       Roles:
         - !Ref ECSRole
 
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups: [ !GetAtt ECSSecurityGroup.GroupId ]
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
+        ImageId: !Ref AMI
+        UserData:
+          "Fn::Base64": !Sub |
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+            MIME-Version: 1.0
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            yum install -y aws-cfn-bootstrap
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
+            --==BOUNDARY==--
+
   SpotFleet:
     Type: AWS::EC2::SpotFleet
     Properties:
@@ -138,34 +156,12 @@ Resources:
         TargetCapacity: !Ref InitialCapacity
         SpotPrice: !Ref MaxPricePerUnitHour
         LaunchSpecifications: {{range $spec := . }}
-          - WeightedCapacity: {{ $spec.Weight }}
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: {{ $spec.InstanceType }}
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-        {{end}}
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: {{ $spec.Weight }}
+              InstanceType: {{ $spec.InstanceType }}{{end}}
 
 Outputs:
   SpotFleet:

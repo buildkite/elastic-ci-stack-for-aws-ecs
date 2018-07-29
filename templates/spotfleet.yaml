@@ -1,6 +1,5 @@
 
-Description: >
-  Spot Fleet for ECS
+Description: Spot Fleet for ECS
 
 Parameters:
   VPC:
@@ -30,11 +29,6 @@ Parameters:
   KeyName:
     Type: String
     Default: ""
-
-  CloudInitScript:
-    Description: A URL to a cloud init script to be included in the instance user-data
-    Type: String
-
 
 Conditions:
   HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
@@ -120,6 +114,30 @@ Resources:
       Roles:
         - !Ref ECSRole
 
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups: [ !GetAtt ECSSecurityGroup.GroupId ]
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
+        ImageId: !Ref AMI
+        UserData:
+          "Fn::Base64": !Sub |
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+            MIME-Version: 1.0
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            yum install -y aws-cfn-bootstrap
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
+            --==BOUNDARY==--
+
   SpotFleet:
     Type: AWS::EC2::SpotFleet
     Properties:
@@ -128,567 +146,127 @@ Resources:
         IamFleetRole: !GetAtt SpotFleetIAMRole.Arn
         TargetCapacity: !Ref InitialCapacity
         SpotPrice: !Ref MaxPricePerUnitHour
-        LaunchSpecifications:
-          - WeightedCapacity: 4
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m5.large
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 8
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m5.xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 16
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m5.2xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 32
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m5.4xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 4
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c5.large
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 8
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c5.xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 16
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c5.2xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 32
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c5.4xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 1
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: t2.small
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 2
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: t2.medium
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 4
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: t2.large
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 8
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: t2.xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 4
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m4.large
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 8
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m4.xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 16
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m4.2xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 32
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: m4.4xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 4
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c4.large
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 8
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c4.xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 16
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c4.2xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
-          - WeightedCapacity: 32
-            IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
-            InstanceType: c4.4xlarge
-            ImageId: !Ref AMI
-            KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
-            SecurityGroups:
-              - GroupId: !GetAtt ECSSecurityGroup.GroupId
-            SubnetId: !Join [", ", !Ref Subnets]
-            UserData:
-              "Fn::Base64": !Sub |
-                Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-                MIME-Version: 1.0
-
-                --==BOUNDARY==
-                Content-Type: text/x-shellscript; charset="us-ascii"
-
-                #!/bin/bash
-                yum install -y aws-cfn-bootstrap
-                echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-                /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-
-                --==BOUNDARY==--
-                Content-Type: text/x-include-url; charset="us-ascii"
-                #!/bin/bash
-
-                [${CloudInitScript}]
-                --==BOUNDARY==--
-
+        LaunchSpecifications: 
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 4
+              InstanceType: m5.large
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 8
+              InstanceType: m5.xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 16
+              InstanceType: m5.2xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 32
+              InstanceType: m5.4xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 4
+              InstanceType: c5.large
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 8
+              InstanceType: c5.xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 16
+              InstanceType: c5.2xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 32
+              InstanceType: c5.4xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 1
+              InstanceType: t2.small
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 2
+              InstanceType: t2.medium
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 4
+              InstanceType: t2.large
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 8
+              InstanceType: t2.xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 4
+              InstanceType: m4.large
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 8
+              InstanceType: m4.xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 16
+              InstanceType: m4.2xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 32
+              InstanceType: m4.4xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 4
+              InstanceType: c4.large
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 8
+              InstanceType: c4.xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 16
+              InstanceType: c4.2xlarge
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref LaunchTemplate
+              Version: !GetAtt "LaunchTemplate.LatestVersionNumber"
+            Overrides:
+              WeightedCapacity: 32
+              InstanceType: c4.4xlarge
 
 Outputs:
   SpotFleet:
