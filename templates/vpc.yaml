@@ -1,4 +1,4 @@
-Description: A configurable VPC with either public or private subnets
+Description: VPC with either public or private subnets
 
 Parameters:
   AvailabilityZones:
@@ -48,20 +48,18 @@ Conditions:
 
   HasSixAZs: !Or [
     !Equals [ !Ref SubnetConfiguration, "6 public subnets with public IP's" ],
-    !Equals [ !Ref SubnetConfiguration, "7 private subnets + 2 public subnets with NAT Gateways for internet access" ]]
+    !Equals [ !Ref SubnetConfiguration, "6 private subnets + 2 public subnets with NAT Gateways for internet access" ]]
 
   HasNatGateway1: { Condition: HasPrivateSubnets }
   HasNatGateway2: { Condition: HasPrivateSubnets }
 
-  HasPublicSubnet1: !Not [ { Condition: HasPrivateSubnets } ]
-  HasPublicSubnet2: !Not [ { Condition: HasPrivateSubnets } ]
   HasPublicSubnet3: !And [ !Not [ { Condition: HasPrivateSubnets } ], !Or [ { Condition: HasThreeAZs }, { Condition: HasFourAZs }, { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPublicSubnet4: !And [ !Not [ { Condition: HasPrivateSubnets } ], !Or [ { Condition: HasFourAZs }, { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPublicSubnet5: !And [ !Not [ { Condition: HasPrivateSubnets } ], !Or [ { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPublicSubnet6: !And [ !Not [ { Condition: HasPrivateSubnets } ], { Condition: HasSixAZs } ]
 
   HasPrivateSubnet1: { Condition: HasPrivateSubnets }
-  HasPrivateSubnet2: { Condition: HasPrivateSubnets }
+  HasPrivateSubnet2: !And [ { Condition: HasPrivateSubnets }, !Or [ { Condition: HasTwoAZs }, { Condition: HasThreeAZs }, { Condition: HasFourAZs }, { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPrivateSubnet3: !And [ { Condition: HasPrivateSubnets }, !Or [ { Condition: HasThreeAZs }, { Condition: HasFourAZs }, { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPrivateSubnet4: !And [ { Condition: HasPrivateSubnets }, !Or [ { Condition: HasFourAZs }, { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
   HasPrivateSubnet5: !And [ { Condition: HasPrivateSubnets }, !Or [ { Condition: HasFiveAZs }, { Condition: HasSixAZs } ] ]
@@ -93,10 +91,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 0, !Ref AvailabilityZones ],
-        !Select [ 0, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 0, !Ref AvailabilityZones ]
       CidrBlock: 10.0.0.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -107,10 +102,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 1, !Ref AvailabilityZones ],
-        !Select [ 1, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 1, !Ref AvailabilityZones ]
       CidrBlock: 10.0.32.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -122,10 +114,7 @@ Resources:
     Condition: HasPublicSubnet3
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 2, !Ref AvailabilityZones ],
-        !Select [ 2, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 2, !Ref AvailabilityZones ]
       CidrBlock: 10.0.128.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -137,10 +126,7 @@ Resources:
     Condition: HasPublicSubnet4
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 3, !Ref AvailabilityZones ],
-        !Select [ 3, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 3, !Ref AvailabilityZones ]
       CidrBlock: 10.0.160.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -152,10 +138,7 @@ Resources:
     Condition: HasPublicSubnet5
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 4, !Ref AvailabilityZones ],
-        !Select [ 4, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 4, !Ref AvailabilityZones ]
       CidrBlock: 10.0.192.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -167,10 +150,7 @@ Resources:
     Condition: HasPublicSubnet6
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 5, !Ref AvailabilityZones ],
-        !Select [ 5, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 5, !Ref AvailabilityZones ]
       CidrBlock: 10.0.224.0/19
       MapPublicIpOnLaunch: true
       Tags:
@@ -229,7 +209,6 @@ Resources:
 
   PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: HasPublicSubnet2
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet2
@@ -267,10 +246,7 @@ Resources:
     Condition: HasPrivateSubnet1
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 0, !Ref AvailabilityZones ],
-        !Select [ 0, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 0, !Ref AvailabilityZones ]
       CidrBlock: 10.0.64.0/19
       MapPublicIpOnLaunch: false
 
@@ -279,10 +255,7 @@ Resources:
     Condition: HasPrivateSubnet2
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 1, !Ref AvailabilityZones ],
-        !Select [ 1, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 1, !Ref AvailabilityZones ]
       CidrBlock: 10.0.96.0/19
       MapPublicIpOnLaunch: false
       Tags:
@@ -294,10 +267,7 @@ Resources:
     Condition: HasPrivateSubnet3
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 2, !Ref AvailabilityZones ],
-        !Select [ 2, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 2, !Ref AvailabilityZones ]
       CidrBlock: 10.0.128.0/19
       MapPublicIpOnLaunch: false
       Tags:
@@ -309,10 +279,7 @@ Resources:
     Condition: HasPrivateSubnet4
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 3, !Ref AvailabilityZones ],
-        !Select [ 3, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 3, !Ref AvailabilityZones ]
       CidrBlock: 10.0.160.0/19
       MapPublicIpOnLaunch: false
       Tags:
@@ -324,10 +291,7 @@ Resources:
     Condition: HasPrivateSubnet5
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 4, !Ref AvailabilityZones ],
-        !Select [ 4, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 4, !Ref AvailabilityZones ]
       CidrBlock: 10.0.192.0/19
       MapPublicIpOnLaunch: false
       Tags:
@@ -339,10 +303,7 @@ Resources:
     Condition: HasPrivateSubnet6
     Properties:
       VpcId: !Ref Vpc
-      AvailabilityZone: !If [
-        UseSpecifiedAvailabilityZones,
-        !Select [ 5, !Ref AvailabilityZones ],
-        !Select [ 5, !GetAZs "" ]]
+      AvailabilityZone: !Select [ 5, !Ref AvailabilityZones ]
       CidrBlock: 10.0.224.0/19
       MapPublicIpOnLaunch: false
       Tags:
@@ -495,31 +456,27 @@ Resources:
 
 Outputs:
   Vpc:
-    Description: A reference to the created VPC
+    Description: The created VPC
     Value: !Ref Vpc
 
   PublicSubnets:
     Description: A list of the public subnets
-    Value: !If [ HasPublicSubnet6,
-      !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4, !Ref PublicSubnet5, !Ref PublicSubnet6 ]],
-      !If [ HasPublicSubnet5,
-        !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4, !Ref PublicSubnet5 ]],
-        !If [ HasPublicSubnet4,
-          !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4 ]],
-          !If [ HasPublicSubnet3,
-            !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3 ]],
-            !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
-          ]]]]
+    Value: !Join
+      - ','
+      - - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !If [HasPublicSubnet3, !Ref PublicSubnet3, !Ref 'AWS::NoValue']
+        - !If [HasPublicSubnet4, !Ref PublicSubnet4, !Ref 'AWS::NoValue']
+        - !If [HasPublicSubnet5, !Ref PublicSubnet5, !Ref 'AWS::NoValue']
+        - !If [HasPublicSubnet6, !Ref PublicSubnet6, !Ref 'AWS::NoValue']
 
   PrivateSubnets:
     Description: A list of the private subnets
-    Value: !If [ HasPrivateSubnet6,
-      !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3, !Ref PrivateSubnet4, !Ref PrivateSubnet5, !Ref PrivateSubnet6 ]],
-      !If [ HasPrivateSubnet5,
-        !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3, !Ref PrivateSubnet4, !Ref PrivateSubnet5 ]],
-        !If [ HasPrivateSubnet4,
-          !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3, !Ref PrivateSubnet4 ]],
-          !If [ HasPrivateSubnet3,
-            !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2, !Ref PrivateSubnet3 ]],
-            !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
-          ]]]]
+    Value: !Join
+      - ','
+      - - !If [HasPrivateSubnet1, !Ref PrivateSubnet1, !Ref 'AWS::NoValue']
+        - !If [HasPrivateSubnet2, !Ref PrivateSubnet2, !Ref 'AWS::NoValue']
+        - !If [HasPrivateSubnet3, !Ref PrivateSubnet3, !Ref 'AWS::NoValue']
+        - !If [HasPrivateSubnet4, !Ref PrivateSubnet4, !Ref 'AWS::NoValue']
+        - !If [HasPrivateSubnet5, !Ref PrivateSubnet5, !Ref 'AWS::NoValue']
+        - !If [HasPrivateSubnet6, !Ref PrivateSubnet6, !Ref 'AWS::NoValue']
