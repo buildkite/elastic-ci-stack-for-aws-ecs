@@ -1,0 +1,431 @@
+---
+Description: Spot Fleet for ECS
+
+Mappings:
+    # These are the latest ECS optimized AMIs as of August 2018:
+    #
+    #   amzn-ami-2018.03.e-amazon-ecs-optimized
+    #   ECS agent:    1.20.1
+    #   Docker:       18.03.1-ce
+    #   ecs-init:     1.20.1-1
+    #
+    # You can find the latest available on this page of our documentation:
+    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
+    # (note the AMI identifier is region specific)
+
+    AWSRegionToAMI:
+        us-east-2:
+            AMI: ami-028a9de0a7e353ed9
+        us-east-1:
+            AMI: ami-00129b193dc81bc31
+        us-west-2:
+            AMI: ami-00d4f478
+        us-west-1:
+            AMI: ami-0d438d09af26c9583
+        eu-west-3:
+            AMI: ami-07da674f0655ef4e1
+        eu-west-2:
+            AMI: ami-a44db8c3
+        eu-west-1:
+            AMI: ami-0af844a965e5738db
+        eu-central-1:
+            AMI: ami-0291ba887ba0d515f
+        ap-northeast-2:
+            AMI: ami-047d2a61f94f862dc
+        ap-northeast-1:
+            AMI: ami-0041c416aa23033a2
+        ap-southeast-2:
+            AMI: ami-0092e55c70015d8c3
+        ap-southeast-1:
+            AMI: ami-091bf462afdb02c60
+        ca-central-1:
+            AMI: ami-192fa27d
+        ap-south-1:
+            AMI: ami-0c179ca015d301829
+        sa-east-1:
+            AMI: ami-0018ff8ee48970ac3
+        us-gov-est-1:
+            AMI: ami-c6079ba7
+
+Parameters:
+  VPC:
+    Description: The VPC to deploy SpotFleet into
+    Type: AWS::EC2::VPC::Id
+
+  Subnets:
+    Description: The subnets of a VPC to deploy SpotFleet into
+    Type: List<AWS::EC2::Subnet::Id>
+
+  ECSCluster:
+    Description: The ECS Cluster to register with
+    Type: String
+
+  MaxCapacity:
+    Description: The maximum capacity for the Spot fleet
+    Type: Number
+    Default: 50
+
+  MinCapacity:
+    Description: The minimum capacity for the Spot fleet
+    Type: Number
+    Default: 0
+
+  KeyName:
+    Type: String
+    Default: ""
+
+  LambdaBucket:
+    Type: String
+    Default: "buildkite-aws-stack-ecs-dev"
+
+Conditions:
+  HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
+
+Resources:
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "Security group for ECS instances"
+      GroupDescription: "Security group for ECS instances"
+      VpcId: !Ref VPC
+
+  ECSSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ECSSecurityGroup
+      SourceSecurityGroupId: !Ref ECSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+
+  SpotFleetIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: |
+        {
+          "Statement": [{
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "spotfleet.amazonaws.com"
+            }
+          }]
+        }
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole
+
+  ECSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument: |
+        {
+          "Statement": [{
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ec2.amazonaws.com"
+            }
+          }]
+        }
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument: |
+            {
+              "Statement": [{
+                "Effect": "Allow",
+                "Action": [
+                "ecs:CreateCluster",
+                "ecs:DeregisterContainerInstance",
+                "ecs:DiscoverPollEndpoint",
+                "ecs:Poll",
+                "ecs:RegisterContainerInstance",
+                "ecs:StartTelemetrySession",
+                "ecs:Submit*",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:GetAuthorizationToken"
+                ],
+                "Resource": "*"
+              }]
+            }
+
+  ECSInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ECSRole
+
+  ECSLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            Groups: [ !GetAtt ECSSecurityGroup.GroupId ]
+        KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        IamInstanceProfile: { Arn: !GetAtt ECSInstanceProfile.Arn }
+        ImageId: !FindInMap [ AWSRegionToAMI, !Ref "AWS::Region", "AMI" ]
+        UserData:
+          "Fn::Base64": !Sub |
+            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
+            MIME-Version: 1.0
+
+            --==BOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash
+            yum install -y aws-cfn-bootstrap
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
+            --==BOUNDARY==--
+
+  SpotFleet:
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: lowestPrice
+        IamFleetRole: !GetAtt SpotFleetIAMRole.Arn
+        TargetCapacity: !Ref MinCapacity
+        LaunchTemplateConfigs:
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 4
+                InstanceType: m5.large
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 8
+                InstanceType: m5.xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 16
+                InstanceType: m5.2xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 32
+                InstanceType: m5.4xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 4
+                InstanceType: m4.large
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 8
+                InstanceType: m4.xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 16
+                InstanceType: m4.2xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref ECSLaunchTemplate
+              Version: !GetAtt "ECSLaunchTemplate.LatestVersionNumber"
+            Overrides:
+              - WeightedCapacity: 32
+                InstanceType: m4.4xlarge
+                SubnetId: !Join [ ',', !Ref Subnets ]
+
+  SpotFleetAutoscaleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - application-autoscaling.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetAutoscaleRole
+      Path: /
+
+  SpotFleetScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn:
+    - SpotFleet
+    - SpotFleetAutoscaleRole
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Join [ "/", [ "spot-fleet-request", !Ref SpotFleet]]
+      RoleARN: !GetAtt [SpotFleetAutoscaleRole, Arn]
+      ScalableDimension: ec2:spot-fleet-request:TargetCapacity
+      ServiceNamespace: ec2
+
+  SpotFleetScalingPolicyScaleDown:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: SpotFleetScalingPolicyScaleDown
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref SpotFleetScalableTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Minimum
+        MinAdjustmentMagnitude: 1
+        StepAdjustments:
+        - MetricIntervalUpperBound: 0
+          ScalingAdjustment: -5
+
+  SpotFleetScalingPolicyScaleUp:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: SpotFleetScalingPolicyScaleUp
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref SpotFleetScalableTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: PercentChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Average
+        MinAdjustmentMagnitude: 1
+        StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          ScalingAdjustment: 20
+
+  CPUPressureAlarmScaleDown:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - SpotFleetScalingPolicyScaleDown
+    Properties:
+      AlarmActions:
+      - !Ref SpotFleetScalingPolicyScaleDown
+      AlarmDescription: Alarm if CPU pressure drops <= 0
+      ComparisonOperator: LessThanOrEqualToThreshold
+      Dimensions:
+      - Name: Cluster
+        Value: !Ref ECSCluster
+      EvaluationPeriods: 1
+      MetricName: CPUPressure
+      Namespace: Buildkite/ECS
+      Period: 60
+      Statistic: Minimum
+      Threshold: 0
+
+  CPUPressureAlarmScaleUp:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn:
+    - SpotFleetScalingPolicyScaleUp
+    Properties:
+      AlarmActions:
+      - !Ref SpotFleetScalingPolicyScaleUp
+      AlarmDescription: Alarm if CPU pressure rises above 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+      - Name: Cluster
+        Value: !Ref  ECSCluster
+      EvaluationPeriods: 1
+      MetricName: CPUPressure
+      Namespace: Buildkite/ECS
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeECSResources
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ecs:Describe*
+                - ecs:List*
+              Resource: '*'
+        - PolicyName: PutCloudwatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt ECSMetricsFunction.Arn
+          Id: "TargetECSMetricsFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: { Ref: ECSMetricsFunction }
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
+
+  # This mirrors the group that would be created by the lambda, but enforces
+  # a retention period and also ensures it's removed when the stack is removed
+  ECSServiceScalerLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Join ["/", ["/aws/lambda", !Ref ECSMetricsFunction]]
+      RetentionInDays: 1
+
+  ECSMetricsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - LambdaExecutionRole
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaBucket
+        S3Key: "ecs-pressure-metrics.zip"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Handler: handler
+      Runtime: go1.x
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
+          BUMP: 1
+
+Outputs:
+  SpotFleet:
+    Description: The SpotFleet created
+    Value: !Ref SpotFleet

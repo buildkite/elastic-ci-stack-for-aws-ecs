@@ -2,54 +2,16 @@
 
 This is an **experimental version** of our main [AWS stack](https://github.com/buildkite/elastic-ci-stack-for-aws) that makes use of ECS and Spot Fleets.
 
-## Design
+## Stacks
 
-* An AWS SpotFleet is used to run ECS Instances in a dedicated ECS cluster.
-* An ECS Service is used to run our Agent via docker.
-* A lambda ([buildkite-agent-scaler](https://github.com/buildkite/buildkite-agent-scaler)) is run on a schedule to adjust the capacity of the SpotFleet based on scheduled jobs.
-* ECS Instances bootstrap via user-data from a vanilla Amazon ECS AMI
+### VPC
 
-## Open Questions
+The [VPC Stack](templates/vpc/README.md) provides the underlying VPC resources.
 
-* Does bootstrapping vanilla ECS mean spin-up is slower?
-* How does ECS scheduling handle builds that create docker containers outside of ECS?
+### Agent
 
-## Running
+The [Agent Stack](templates/agent/README.md) provides the top-level ECS Cluster, with the buildkite-agent ECS Task and Service. It has two lambdas that auto-scale the ECS service based on Scheduled Jobs in the Buildkite API and also publishes metrics on the compute capacity required by the ECS service.
 
-```bash
-## Create an Elastic Stack
-aws cloudformation create-stack \
-  --output text \
-  --stack-name buildkite-elastic-stack-ecs \
-  --template-body "file://$PWD/templates/elastic-stack.yaml" \
-  --capabilities CAPABILITY_IAM \
-  --parameters "ParameterKey=BuildkiteAgentToken,ParameterValue=xxx"
+### Spotfleet Compute
 
-## Figure out what availability zones are available
-aws ec2 describe-availability-zones \
-  --query 'AvailabilityZones[?State==`available`].ZoneName'
-[
-    "us-east-1a",
-    "us-east-1b",
-    "us-east-1c",
-    "us-east-1d",
-    "us-east-1e",
-    "us-east-1f"
-]
-
-## Create a VPC stack
-aws cloudformation create-stack \
-  --output text \
-  --stack-name buildkite-elastic-stack-ecs-vpc \
-  --template-body "file://$PWD/templates/vpc.yaml" \
-  --parameters "ParameterKey=AvailabilityZones,ParameterValue=us-east-1a\\,us-east-1b\\,us-east-1c\\,us-east-1d\\,us-east-1e\\,us-east-1f" \
-               "ParameterKey=SubnetConfiguration,ParameterValue=6 private subnets + 2 public subnets with NAT Gateways for internet access"
-
-## Get Private Subnets and Vpc from VPC stack
-aws cloudformation describe-stacks \
-  --stack-name buildkite-elastic-stack-ecs-vpc \
-  --query "Stacks[*].Outputs"
-
-
-
-```
+The [Spotfleet Stack](templates/compute/spotfleet/README.md) provides an AWS Spotfleet that runs ECS Instances. It autoscales based on metrics published by the Metrics stack.

@@ -1,0 +1,170 @@
+---
+Description: Buildkite Elastic Stack for AWS ECS
+
+Parameters:
+  BuildkiteAgentToken:
+    Description: Buildkite Agent Registration token
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: /buildkite/agent_token
+
+  BuildkiteQueue:
+    Description: Queue name that agents will use, targeted in pipeline steps using "queue={value}"
+    Type: String
+    Default: default
+    MinLength: 1
+
+  LambdaBucket:
+    Type: String
+    Default: "buildkite-aws-stack-ecs-dev"
+
+Resources:
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ECSLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      RetentionInDays: 7
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref AWS::StackName
+
+  ECSAgentTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    DependsOn:
+      - ECSExecutionRole
+      - ECSLogGroup
+    Properties:
+      NetworkMode: bridge
+      ExecutionRoleArn: !Ref ECSExecutionRole
+      Cpu: 512
+      Memory: 2048
+      ContainerDefinitions:
+        - Name: buildkite-agent
+          Image: "buildkite/agent:3"
+          Essential: "true"
+          Environment:
+            - Name: BUILDKITE_AGENT_TOKEN
+              Value: !Ref BuildkiteAgentToken
+            - Name: BUILDKITE_AGENT_TAGS
+              Value: !Sub "queue=${BuildkiteQueue}"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              "awslogs-group": !Ref ECSLogGroup
+              "awslogs-region": !Ref AWS::Region
+              "awslogs-stream-prefix": "agent"
+
+  ECSAgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      DesiredCount: 0
+      TaskDefinition: !Ref ECSAgentTaskDefinition
+      PlacementStrategies:
+        - Type: binpack
+          Field: cpu
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DescribeECSService
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ecs:Describe*
+              Resource:
+                - !Ref ECSAgentService
+                - !GetAtt ECSCluster.Arn
+        - PolicyName: UpdateECSService
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ecs:UpdateService
+              Resource: '*'
+
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: "ENABLED"
+      Targets:
+        - Arn: !GetAtt ECSServiceScalerFunction.Arn
+          Id: "TargetScalerFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: { Ref: ECSServiceScalerFunction }
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
+
+  # This mirrors the group that would be created by the lambda, but enforces
+  # a retention period and also ensures it's removed when the stack is removed
+  ECSServiceScalerLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Join ["/", ["/aws/lambda", !Ref ECSServiceScalerFunction]]
+      RetentionInDays: 1
+
+  ECSServiceScalerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+    - LambdaExecutionRole
+    Properties:
+      Code:
+        S3Bucket: !Ref LambdaBucket
+        S3Key: "ecs-service-scaler.zip"
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Handler: handler
+      Runtime: go1.x
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUILDKITE_TOKEN: !Ref BuildkiteAgentToken
+          BUILDKITE_QUEUE: !Ref BuildkiteQueue
+          BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
+          BUILDKITE_ECS_SERVICE: !Ref ECSAgentService
+          BUMP: 1
+
+Outputs:
+  Cluster:
+    Description: A reference to the ECS cluster
+    Value: !Ref ECSCluster
+
+  AgentService:
+    Description: The ECS Service for the Agent
+    Value: !Ref ECSAgentService
