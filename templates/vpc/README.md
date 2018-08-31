@@ -33,7 +33,7 @@ aws ec2 describe-availability-zones \
 ## Create a VPC stack
 aws cloudformation create-stack \
   --output text \
-  --stack-name buildkite-vpc \
+  --stack-name elastic-ecs-vpc \
   --template-body "file://$PWD/templates/vpc/template.yaml" \
   --parameters \
     "ParameterKey=AvailabilityZones,ParameterValue=us-east-1a\\,us-east-1b\\,us-east-1c\\,us-east-1d\\,us-east-1e\\,us-east-1f" \
@@ -41,6 +41,6 @@ aws cloudformation create-stack \
 
 ## Get Private Subnets and Vpc from VPC stack
 aws cloudformation describe-stacks \
-  --stack-name buildkite-vpc \
+  --stack-name elastic-ecs-vpc \
   --query "Stacks[*].Outputs"
 ```

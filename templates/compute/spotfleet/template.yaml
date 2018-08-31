@@ -163,6 +163,35 @@ Resources:
 
   ECSLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          commands:
+            01_add_instance_to_cluster:
+                command: !Sub echo ECS_CLUSTER=${ECSCluster} > /etc/ecs/ecs.config
+          files:
+            "/etc/cfn/cfn-hup.conf":
+              mode: 000400
+              owner: root
+              group: root
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+            "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.ContainerInstances.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchTemplate
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
     Properties:
       LaunchTemplateData:
         NetworkInterfaces:
@@ -173,17 +202,10 @@ Resources:
         ImageId: !FindInMap [ AWSRegionToAMI, !Ref "AWS::Region", "AMI" ]
         UserData:
           "Fn::Base64": !Sub |
-            Content-Type: multipart/mixed; boundary="==BOUNDARY=="
-            MIME-Version: 1.0
-
-            --==BOUNDARY==
-            Content-Type: text/x-shellscript; charset="us-ascii"
-
             #!/bin/bash
             yum install -y aws-cfn-bootstrap
-            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
-            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SpotFleet --region ${AWS::Region}
-            --==BOUNDARY==--
+            /opt/aws/bin/cfn-init -v --region ${AWS::Region} --stack ${AWS::StackName} --resource ECSLaunchTemplate
+            /opt/aws/bin/cfn-signal -e $? --region ${AWS::Region} --stack ${AWS::StackName} --resource SpotFleet
 
   SpotFleet:
     Type: AWS::EC2::SpotFleet
@@ -192,6 +214,8 @@ Resources:
         AllocationStrategy: lowestPrice
         IamFleetRole: !GetAtt SpotFleetIAMRole.Arn
         TargetCapacity: !Ref MinCapacity
+        ReplaceUnhealthyInstances: true
+        TerminateInstancesWithExpiration: true
         LaunchTemplateConfigs:
           - LaunchTemplateSpecification:
               LaunchTemplateId: !Ref ECSLaunchTemplate
@@ -250,103 +274,6 @@ Resources:
                 InstanceType: m4.4xlarge
                 SubnetId: !Join [ ',', !Ref Subnets ]
 
-  SpotFleetAutoscaleRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-        - Action:
-          - sts:AssumeRole
-          Effect: Allow
-          Principal:
-            Service:
-            - application-autoscaling.amazonaws.com
-        Version: 2012-10-17
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetAutoscaleRole
-      Path: /
-
-  SpotFleetScalableTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    DependsOn:
-    - SpotFleet
-    - SpotFleetAutoscaleRole
-    Properties:
-      MaxCapacity: !Ref MaxCapacity
-      MinCapacity: !Ref MinCapacity
-      ResourceId: !Join [ "/", [ "spot-fleet-request", !Ref SpotFleet]]
-      RoleARN: !GetAtt [SpotFleetAutoscaleRole, Arn]
-      ScalableDimension: ec2:spot-fleet-request:TargetCapacity
-      ServiceNamespace: ec2
-
-  SpotFleetScalingPolicyScaleDown:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: SpotFleetScalingPolicyScaleDown
-      PolicyType: StepScaling
-      ScalingTargetId: !Ref SpotFleetScalableTarget
-      StepScalingPolicyConfiguration:
-        AdjustmentType: PercentChangeInCapacity
-        Cooldown: 300
-        MetricAggregationType: Minimum
-        MinAdjustmentMagnitude: 1
-        StepAdjustments:
-        - MetricIntervalUpperBound: 0
-          ScalingAdjustment: -5
-
-  SpotFleetScalingPolicyScaleUp:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: SpotFleetScalingPolicyScaleUp
-      PolicyType: StepScaling
-      ScalingTargetId: !Ref SpotFleetScalableTarget
-      StepScalingPolicyConfiguration:
-        AdjustmentType: PercentChangeInCapacity
-        Cooldown: 300
-        MetricAggregationType: Average
-        MinAdjustmentMagnitude: 1
-        StepAdjustments:
-        - MetricIntervalLowerBound: 0
-          ScalingAdjustment: 20
-
-  CPUPressureAlarmScaleDown:
-    Type: AWS::CloudWatch::Alarm
-    DependsOn:
-    - SpotFleetScalingPolicyScaleDown
-    Properties:
-      AlarmActions:
-      - !Ref SpotFleetScalingPolicyScaleDown
-      AlarmDescription: Alarm if CPU pressure drops <= 0
-      ComparisonOperator: LessThanOrEqualToThreshold
-      Dimensions:
-      - Name: Cluster
-        Value: !Ref ECSCluster
-      EvaluationPeriods: 1
-      MetricName: CPUPressure
-      Namespace: Buildkite/ECS
-      Period: 60
-      Statistic: Minimum
-      Threshold: 0
-
-  CPUPressureAlarmScaleUp:
-    Type: AWS::CloudWatch::Alarm
-    DependsOn:
-    - SpotFleetScalingPolicyScaleUp
-    Properties:
-      AlarmActions:
-      - !Ref SpotFleetScalingPolicyScaleUp
-      AlarmDescription: Alarm if CPU pressure rises above 0
-      ComparisonOperator: GreaterThanThreshold
-      Dimensions:
-      - Name: Cluster
-        Value: !Ref  ECSCluster
-      EvaluationPeriods: 1
-      MetricName: CPUPressure
-      Namespace: Buildkite/ECS
-      Period: 60
-      Statistic: Maximum
-      Threshold: 0
-
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -372,14 +299,6 @@ Resources:
                 - ecs:Describe*
                 - ecs:List*
               Resource: '*'
-        - PolicyName: PutCloudwatchMetrics
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-            - Effect: Allow
-              Action:
-                - cloudwatch:PutMetricData
-              Resource: '*'
 
   ScheduledRule:
     Type: "AWS::Events::Rule"
@@ -388,33 +307,33 @@ Resources:
       ScheduleExpression: "rate(1 minute)"
       State: "ENABLED"
       Targets:
-        - Arn: !GetAtt ECSMetricsFunction.Arn
+        - Arn: !GetAtt ECSSpotFleetScalerFunction.Arn
           Id: "TargetECSMetricsFunction"
 
   PermissionForEventsToInvokeLambda:
     Type: "AWS::Lambda::Permission"
     Properties:
-      FunctionName: { Ref: ECSMetricsFunction }
+      FunctionName: !Ref ECSSpotFleetScalerFunction
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
       SourceArn: !GetAtt ScheduledRule.Arn
 
   # This mirrors the group that would be created by the lambda, but enforces
   # a retention period and also ensures it's removed when the stack is removed
-  ECSServiceScalerLogGroup:
+  ECSSpotFleetScalerLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
-      LogGroupName: !Join ["/", ["/aws/lambda", !Ref ECSMetricsFunction]]
+      LogGroupName: !Join ["/", ["/aws/lambda", !Ref ECSSpotFleetScalerFunction]]
       RetentionInDays: 1
 
-  ECSMetricsFunction:
+  ECSSpotFleetScalerFunction:
     Type: AWS::Lambda::Function
     DependsOn:
     - LambdaExecutionRole
     Properties:
       Code:
         S3Bucket: !Ref LambdaBucket
-        S3Key: "ecs-pressure-metrics.zip"
+        S3Key: "ecs-spotfleet-scaler.zip"
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
@@ -423,7 +342,9 @@ Resources:
       Environment:
         Variables:
           BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
-          BUMP: 1
+          BUILDKITE_SPOT_FLEET: !Ref SpotFleet
+          LAMBDA_TIMEOUT: 1m
+          LAMBDA_INTERVAL: 20s
 
 Outputs:
   SpotFleet:

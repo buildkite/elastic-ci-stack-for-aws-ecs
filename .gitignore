@@ -1,2 +1,2 @@
-lambdas/ecs-service-scaler/handler
-ecs-service-scaler.zip
+/lambdas/*/handler
+/*.zip

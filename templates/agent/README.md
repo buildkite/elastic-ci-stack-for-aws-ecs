@@ -13,5 +13,5 @@ aws cloudformation create-stack \
   --template-body "file://$PWD/templates/agent/template.yaml" \
   --capabilities CAPABILITY_IAM \
   --parameters \
-    "ParameterKey=ScalerLambdaBucket,ParameterValue=my-dev-bucket"
+    "ParameterKey=LambdaBucket,ParameterValue=my-dev-bucket"
 ```
