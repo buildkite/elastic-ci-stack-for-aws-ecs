@@ -19,16 +19,11 @@ Note that NAT Gateways are kind of expensive and are charged at $0.045-0.095 an 
 
 ```bash
 ## Figure out what availability zones are available
-aws ec2 describe-availability-zones \
-  --query 'AvailabilityZones[?State==`available`].ZoneName'
-[
-    "us-east-1a",
-    "us-east-1b",
-    "us-east-1c",
-    "us-east-1d",
-    "us-east-1e",
-    "us-east-1f"
-]
+export EC2_AVAILABILITY_ZONES=$(aws ec2 describe-availability-zones \
+  --query 'AvailabilityZones[?State==`available`].ZoneName' \
+  --output text | sed -E -e 's/[[:blank:]]+/,/g')
+
+export EC2_AVAILABILITY_ZONES_COUNT=$(grep -c ',' <<< "$EC2_AVAILABILITY_ZONES")
 
 ## Create a VPC stack
 aws cloudformation create-stack \
@@ -36,11 +31,17 @@ aws cloudformation create-stack \
   --stack-name elastic-ecs-vpc \
   --template-body "file://$PWD/templates/vpc/template.yaml" \
   --parameters \
-    "ParameterKey=AvailabilityZones,ParameterValue=us-east-1a\\,us-east-1b\\,us-east-1c\\,us-east-1d\\,us-east-1e\\,us-east-1f" \
-    "ParameterKey=SubnetConfiguration,ParameterValue=6 public subnets"
+    "ParameterKey=AvailabilityZones,ParameterValue=${EC2_AVAILABILITY_ZONES}" \
+    "ParameterKey=SubnetConfiguration,ParameterValue=${EC2_AVAILABILITY_ZONES_COUNT} public subnets"
 
 ## Get Private Subnets and Vpc from VPC stack
-aws cloudformation describe-stacks \
+export EC2_VPC_ID="$(aws cloudformation describe-stacks \
   --stack-name elastic-ecs-vpc \
-  --query "Stacks[*].Outputs"
+  --query 'Stacks[0].Outputs[?OutputKey==`Vpc`].OutputValue' \
+  --output text)"
+
+export EC2_VPC_SUBNETS="$(aws cloudformation describe-stacks \
+  --stack-name elastic-ecs-vpc \
+  --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnets`].OutputValue' \
+  --output text | sed -e 's/,/\\\\,/g')"
 ```
