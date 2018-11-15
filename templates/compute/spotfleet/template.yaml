@@ -299,6 +299,15 @@ Resources:
                 - ecs:Describe*
                 - ecs:List*
               Resource: '*'
+        - PolicyName: ModifySpotFleet
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:DescribeSpotFleetRequests
+                - ec2:ModifySpotFleetRequest
+              Resource: '*'
 
   ScheduledRule:
     Type: "AWS::Events::Rule"
