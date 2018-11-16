@@ -23,25 +23,25 @@ export EC2_AVAILABILITY_ZONES=$(aws ec2 describe-availability-zones \
   --query 'AvailabilityZones[?State==`available`].ZoneName' \
   --output text | sed -E -e 's/[[:blank:]]+/,/g')
 
-export EC2_AVAILABILITY_ZONES_COUNT=$(grep -c ',' <<< "$EC2_AVAILABILITY_ZONES")
+export EC2_AVAILABILITY_ZONES_COUNT=$(awk -F, '{print NF-1}' <<< "$EC2_AVAILABILITY_ZONES")
 
 ## Create a VPC stack
 aws cloudformation create-stack \
   --output text \
-  --stack-name elastic-ecs-vpc \
+  --stack-name buildkite-vpc \
   --template-body "file://$PWD/templates/vpc/template.yaml" \
   --parameters \
-    "ParameterKey=AvailabilityZones,ParameterValue=${EC2_AVAILABILITY_ZONES}" \
+    "ParameterKey=AvailabilityZones,ParameterValue=${EC2_AVAILABILITY_ZONES//,/\\\\\\,}" \
     "ParameterKey=SubnetConfiguration,ParameterValue=${EC2_AVAILABILITY_ZONES_COUNT} public subnets"
 
 ## Get Private Subnets and Vpc from VPC stack
 export EC2_VPC_ID="$(aws cloudformation describe-stacks \
-  --stack-name elastic-ecs-vpc \
+  --stack-name buildkite-vpc \
   --query 'Stacks[0].Outputs[?OutputKey==`Vpc`].OutputValue' \
   --output text)"
 
 export EC2_VPC_SUBNETS="$(aws cloudformation describe-stacks \
-  --stack-name elastic-ecs-vpc \
+  --stack-name buildkite-vpc \
   --query 'Stacks[0].Outputs[?OutputKey==`PublicSubnets`].OutputValue' \
-  --output text | sed -e 's/,/\\\\,/g')"
+  --output text)"
 ```

@@ -9,7 +9,7 @@ aws ssm put-parameter --name "/buildkite/agent_token" --type String --value "xxx
 # Create the stack
 aws cloudformation create-stack \
   --output text \
-  --stack-name buildkite-agent \
+  --stack-name buildkite-agent-default \
   --template-body "file://$PWD/templates/agent/template.yaml" \
   --capabilities CAPABILITY_IAM \
   --parameters \
