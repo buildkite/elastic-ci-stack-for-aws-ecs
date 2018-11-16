@@ -37,6 +37,7 @@ sync: $(LAMBDAS)
 	aws s3 cp --acl public-read ecs-spotfleet-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
 
 docker:
+	docker pull buildkite/agent:3
 	docker build --tag "$(DOCKER_TAG)" ./docker
 
 lint:
