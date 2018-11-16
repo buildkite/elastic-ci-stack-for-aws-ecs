@@ -85,7 +85,6 @@ Resources:
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: "Security group for ECS instances"
       GroupDescription: "Security group for ECS instances"
       VpcId: !Ref VPC
 
