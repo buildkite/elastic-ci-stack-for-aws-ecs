@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	version = "0.0.0"
-)
-
-const (
 	// Converts cpu/memory needed into a capacity figure for spotfleet
 	cpuDivisor    = 1024
 	memoryDivisor = 2048
+)
+
+var (
+	Version string = "dev"
 )
 
 func main() {
@@ -38,6 +38,8 @@ func main() {
 }
 
 func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
+	log.Printf("ecs-spotfleet-scaler version %s", Version)
+
 	var timeout <-chan time.Time = make(chan time.Time)
 	var interval time.Duration = 10 * time.Second
 

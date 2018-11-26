@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -17,10 +18,13 @@ import (
 )
 
 const (
-	version                = "0.0.0"
 	defaultMetricsEndpoint = "https://agent.buildkite.com/v3"
 	iterations             = 6
 	delay                  = time.Second * 10
+)
+
+var (
+	Version string = "dev"
 )
 
 func main() {
@@ -35,6 +39,8 @@ func main() {
 }
 
 func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
+	log.Printf("ecs-spotfleet-scaler version %s", Version)
+
 	for i := 0; i < iterations; i++ {
 		client := newBuildkiteClient(os.Getenv(`BUILDKITE_TOKEN`))
 		count, err := client.GetScheduledJobCount(os.Getenv(`BUILDKITE_QUEUE`))
@@ -44,6 +50,22 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 
 		cluster := os.Getenv(`BUILDKITE_ECS_CLUSTER`)
 		service := os.Getenv(`BUILDKITE_ECS_SERVICE`)
+
+		var minSize int64
+		if ms := os.Getenv(`BUILDKITE_MIN_SIZE`); ms != "" {
+			var err error
+			minSize, err = strconv.ParseInt(ms, 10, 32)
+			if err != nil {
+				return "", fmt.Errorf("Failed to parse BUILDKITE_MIN_SIZE: %v", err)
+			}
+		}
+
+		log.Printf("Got a min size of %d", minSize)
+
+		if count < minSize {
+			log.Printf("Adjusting count to maintain minimum size, would have been %d", count)
+			count = minSize
+		}
 
 		log.Printf("Modifying service %s, setting count=%d", service, count)
 
@@ -74,7 +96,7 @@ type buildkiteClient struct {
 func newBuildkiteClient(agentToken string) *buildkiteClient {
 	return &buildkiteClient{
 		Endpoint:   defaultMetricsEndpoint,
-		UserAgent:  fmt.Sprintf("elastic-ci-stack-for-aws/scaler/%s", version),
+		UserAgent:  fmt.Sprintf("elastic-ci-stack-for-aws-ecs/ecs-service-scaler/%s", Version),
 		AgentToken: agentToken,
 	}
 }

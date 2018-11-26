@@ -1,4 +1,8 @@
-.PHONY: lint validate docker
+.PHONY: sync lint validate docker
+
+VERSION=$(shell git describe --tags --candidates=1 --dirty 2>/dev/null \
+	|| printf "dev-%s" "$$(git rev-parse --short HEAD)")
+FLAGS=-s -w -X main.Version=$(VERSION)
 
 LAMBDA_S3_BUCKET := buildkite-aws-stack-ecs-dev
 LAMBDA_S3_BUCKET_PATH := /
@@ -14,22 +18,24 @@ clean:
 	-rm lambdas/ecs-spotfleet-scaler/handler
 
 %.zip: lambdas/%/handler
-	zip -j $< $@
+	zip -j $@ "$<"
 
-lambdas/ecs-service-scaler/handler: lambdas/ecs-service-scaler/main.go
-	docker run --volume $(PWD):/go/src/github.com/buildkite/elastic-stack-for-aws-ecs \
-		--workdir /go/src/github.com/buildkite/elastic-stack-for-aws-ecs \
-		--rm golang:1.10 \
-		sh -c "go get ./lambdas/ecs-service-scaler && \
-			go build -o lambdas/ecs-service-scaler/handler ./lambdas/ecs-service-scaler"
+lambdas/ecs-service-scaler/handler: lambdas/ecs-service-scaler/main.go lambdas/ecs-service-scaler/go.sum
+	docker run \
+		--volume module_cache:/go/pkg/mod \
+		--volume $(PWD)/lambdas/ecs-service-scaler:/lambda \
+		--workdir /lambda \
+		--rm golang:1.11 \
+		go build -ldflags="$(FLAGS)" -o handler .
 	chmod +x lambdas/ecs-service-scaler/handler
 
-lambdas/ecs-spotfleet-scaler/handler: lambdas/ecs-spotfleet-scaler/main.go
-	docker run --volume $(PWD):/go/src/github.com/buildkite/elastic-stack-for-aws-ecs \
-		--workdir /go/src/github.com/buildkite/elastic-stack-for-aws-ecs \
-		--rm golang:1.10 \
-		sh -c "go get ./lambdas/ecs-spotfleet-scaler && \
-			go build -o lambdas/ecs-spotfleet-scaler/handler ./lambdas/ecs-spotfleet-scaler"
+lambdas/ecs-spotfleet-scaler/handler: lambdas/ecs-spotfleet-scaler/main.go lambdas/ecs-spotfleet-scaler/go.sum
+	docker run \
+		--volume module_cache:/go/pkg/mod \
+		--volume $(PWD)/lambdas/ecs-spotfleet-scaler:/lambda \
+		--workdir /lambda \
+		--rm golang:1.11 \
+		go build -ldflags="$(FLAGS)" -o handler .
 	chmod +x lambdas/ecs-spotfleet-scaler/handler
 
 sync: $(LAMBDAS)
