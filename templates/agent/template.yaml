@@ -17,6 +17,27 @@ Parameters:
     Type: String
     Default: "buildkite-aws-stack-ecs-dev"
 
+  LambdaObjectVersion:
+    Type: String
+    Default: "latest"
+
+  AgentDockerImage:
+    Type: String
+    Default: "lox24/buildkite-agent-ecs"
+
+  AgentBootstrapDockerImage:
+    Type: String
+    Default: "lox24/buildkite-agent-ecs"
+
+  MinSize:
+    Description: Minimum number of agents to have running
+    Type: Number
+    Default: 0
+
+
+Conditions:
+  HasLambdaObjectVersions: !Not [ !Equals [ !Ref LambdaObjectVersion, "latest" ] ]
+
 Resources:
   ECSExecutionRole:
     Type: AWS::IAM::Role
@@ -32,10 +53,43 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ECSRunTask
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ecs:RegisterTaskDefinition
+                - ecs:RunTask
+                - ecs:DescribeTasks
+                - logs:DescribeLogGroups
+                - logs:DescribeLogStreams
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                - logs:FilterLogEvents
+              Resource: '*'
+
   ECSLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
       RetentionInDays: 7
+
+  ECSRunTaskLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      RetentionInDays: 1
 
   ECSCluster:
     Type: AWS::ECS::Cluster
@@ -44,35 +98,55 @@ Resources:
 
   ECSAgentTaskDefinition:
     Type: "AWS::ECS::TaskDefinition"
-    DependsOn:
-      - ECSExecutionRole
-      - ECSLogGroup
     Properties:
       NetworkMode: bridge
       ExecutionRoleArn: !Ref ECSExecutionRole
-      Cpu: 512
-      Memory: 2048
+      TaskRoleArn: !Ref ECSTaskRole
+      Cpu: "512"
+      Memory: "1024"
+      Volumes:
+        - Name: "buildkite-builds"
+          Host:
+            SourcePath: "/buildkite/builds"
+        - Name: "docker-socket"
+          Host:
+            SourcePath: "/var/run/docker.sock"
       ContainerDefinitions:
         - Name: buildkite-agent
-          Image: "buildkite/agent:3"
-          Essential: "true"
+          Image: !Ref AgentDockerImage
+          Essential: true
           Environment:
             - Name: BUILDKITE_AGENT_TOKEN
               Value: !Ref BuildkiteAgentToken
             - Name: BUILDKITE_AGENT_TAGS
               Value: !Sub "queue=${BuildkiteQueue}"
+            - Name: BUILDKITE_BOOTSTRAP_DOCKER_IMAGE
+              Value: !Ref AgentBootstrapDockerImage
+            - Name: BUILDKITE_BUILD_PATH
+              Value: "/buildkite/builds"
+            - Name: BUILDKITE_ECS_RUN_LOG_GROUP
+              Value: !Ref ECSRunTaskLogGroup
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: ECS_CLUSTER
+              Value: !Ref ECSCluster
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
               "awslogs-group": !Ref ECSLogGroup
               "awslogs-region": !Ref AWS::Region
               "awslogs-stream-prefix": "agent"
+          MountPoints:
+            - ContainerPath: "/buildkite/builds"
+              SourceVolume: "buildkite-builds"
+            - ContainerPath: "/var/run/docker.sock"
+              SourceVolume: "docker-socket"
 
   ECSAgentService:
     Type: AWS::ECS::Service
     Properties:
       Cluster: !Ref ECSCluster
-      DesiredCount: 0
+      DesiredCount: !Ref MinSize
       TaskDefinition: !Ref ECSAgentTaskDefinition
       PlacementStrategies:
         - Type: binpack
@@ -111,6 +185,7 @@ Resources:
             - Effect: Allow
               Action:
                 - ecs:UpdateService
+                - ecs:DescribeServices
               Resource: '*'
 
   ScheduledRule:
@@ -141,12 +216,11 @@ Resources:
 
   ECSServiceScalerFunction:
     Type: AWS::Lambda::Function
-    DependsOn:
-    - LambdaExecutionRole
     Properties:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-service-scaler.zip"
+        S3ObjectVersion: !If [HasLambdaObjectVersions, !Ref LambdaObjectVersion, !Ref "AWS::NoValue"]
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
@@ -158,7 +232,9 @@ Resources:
           BUILDKITE_QUEUE: !Ref BuildkiteQueue
           BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
           BUILDKITE_ECS_SERVICE: !Ref ECSAgentService
-          BUMP: 1
+          BUILDKITE_MIN_SIZE: !Ref MinSize
+          LAMBDA_TIMEOUT: 1m
+          LAMBDA_INTERVAL: 10s
 
 Outputs:
   Cluster:

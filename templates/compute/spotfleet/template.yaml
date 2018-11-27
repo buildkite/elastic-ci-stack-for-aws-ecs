@@ -78,8 +78,14 @@ Parameters:
     Type: String
     Default: "buildkite-aws-stack-ecs-dev"
 
+  LambdaObjectVersion:
+    Type: String
+    Default: "latest"
+
 Conditions:
   HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
+
+  HasLambdaObjectVersions: !Not [ !Equals [ !Ref LambdaObjectVersion, "latest" ] ]
 
 Resources:
   ECSSecurityGroup:
@@ -336,12 +342,11 @@ Resources:
 
   ECSSpotFleetScalerFunction:
     Type: AWS::Lambda::Function
-    DependsOn:
-    - LambdaExecutionRole
     Properties:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-spotfleet-scaler.zip"
+        S3ObjectVersion: !If [HasLambdaObjectVersions, !Ref LambdaObjectVersion, !Ref "AWS::NoValue"]
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
