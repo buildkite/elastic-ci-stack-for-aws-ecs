@@ -19,8 +19,6 @@ import (
 
 const (
 	defaultMetricsEndpoint = "https://agent.buildkite.com/v3"
-	iterations             = 6
-	delay                  = time.Second * 10
 )
 
 var (
@@ -41,49 +39,97 @@ func main() {
 func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 	log.Printf("ecs-spotfleet-scaler version %s", Version)
 
-	for i := 0; i < iterations; i++ {
-		client := newBuildkiteClient(os.Getenv(`BUILDKITE_TOKEN`))
-		count, err := client.GetScheduledJobCount(os.Getenv(`BUILDKITE_QUEUE`))
+	var timeout <-chan time.Time = make(chan time.Time)
+	var interval time.Duration = 10 * time.Second
+
+	if intervalStr := os.Getenv(`LAMBDA_INTERVAL`); intervalStr != "" {
+		var err error
+		interval, err = time.ParseDuration(intervalStr)
 		if err != nil {
 			return "", err
 		}
-
-		cluster := os.Getenv(`BUILDKITE_ECS_CLUSTER`)
-		service := os.Getenv(`BUILDKITE_ECS_SERVICE`)
-
-		var minSize int64
-		if ms := os.Getenv(`BUILDKITE_MIN_SIZE`); ms != "" {
-			var err error
-			minSize, err = strconv.ParseInt(ms, 10, 32)
-			if err != nil {
-				return "", fmt.Errorf("Failed to parse BUILDKITE_MIN_SIZE: %v", err)
-			}
-		}
-
-		log.Printf("Got a min size of %d", minSize)
-
-		if count < minSize {
-			log.Printf("Adjusting count to maintain minimum size, would have been %d", count)
-			count = minSize
-		}
-
-		log.Printf("Modifying service %s, setting count=%d", service, count)
-
-		svc := ecs.New(session.New())
-		_, err = svc.UpdateService(&ecs.UpdateServiceInput{
-			Cluster:      aws.String(cluster),
-			Service:      aws.String(service),
-			DesiredCount: aws.Int64(count),
-		})
-		if err != nil {
-			return "", err
-		}
-
-		// Sleep so that we can get multiple executions in a single lambda run
-		time.Sleep(delay)
 	}
 
-	return "", nil
+	if timeoutStr := os.Getenv(`LAMBDA_TIMEOUT`); timeoutStr != "" {
+		timeoutDuration, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			return "", err
+		}
+		timeout = time.After(timeoutDuration)
+	}
+
+	sess := session.New()
+
+	for {
+		select {
+		case <-timeout:
+			return "", nil
+		default:
+			err := scaleECSServiceCapacity(sess)
+			if err != nil {
+				log.Printf("Err: %#v", err.Error())
+				return "", nil
+			}
+
+			log.Printf("Sleeping for %v", interval)
+			time.Sleep(interval)
+		}
+	}
+}
+
+func scaleECSServiceCapacity(sess *session.Session) error {
+	client := newBuildkiteClient(os.Getenv(`BUILDKITE_TOKEN`))
+	count, err := client.GetScheduledJobCount(os.Getenv(`BUILDKITE_QUEUE`))
+	if err != nil {
+		return err
+	}
+
+	cluster := os.Getenv(`BUILDKITE_ECS_CLUSTER`)
+	service := os.Getenv(`BUILDKITE_ECS_SERVICE`)
+
+	var minSize int64
+	if ms := os.Getenv(`BUILDKITE_MIN_SIZE`); ms != "" {
+		var err error
+		minSize, err = strconv.ParseInt(ms, 10, 32)
+		if err != nil {
+			return fmt.Errorf("failed to parse BUILDKITE_MIN_SIZE: %v", err)
+		}
+	}
+
+	svc := ecs.New(sess)
+
+	result, err := svc.DescribeServices(&ecs.DescribeServicesInput{
+		Cluster:      aws.String(cluster),
+		Services: []*string{
+			aws.String(service),
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(result.Services[0].Deployments) > 1 {
+		log.Printf("Deployment in progress, waiting")
+		return nil
+	}
+
+	if count < minSize {
+		log.Printf("Adjusting count to maintain minimum size of %d, would have been %d", 
+			minSize, count)
+		count = minSize
+	}
+
+	log.Printf("Modifying service %s, setting count=%d", service, count)
+	_, err = svc.UpdateService(&ecs.UpdateServiceInput{
+		Cluster:      aws.String(cluster),
+		Service:      aws.String(service),
+		DesiredCount: aws.Int64(count),
+	})
+	if err != nil {
+		return  err
+	}
+
+	return nil
 }
 
 type buildkiteClient struct {

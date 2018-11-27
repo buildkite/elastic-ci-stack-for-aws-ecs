@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"math"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
@@ -133,10 +134,13 @@ func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string
 
 	log.Printf("Total needed CPU is %d, total needed memory is %d", cpuRequired, memoryRequired)
 
-	var count int64 = int64(cpuRequired / cpuDivisor)
-	if int64(memoryRequired/memoryDivisor) > count {
-		count = int64(memoryRequired / memoryDivisor)
+	// do maths in floats to handle fractions
+	var required float64 = float64(cpuRequired) / float64(cpuDivisor)
+	if float64(memoryRequired)/float64(memoryDivisor) > required {
+		required = float64(memoryRequired) / float64(memoryDivisor)
 	}
+
+	var requiredInt int64 = int64(math.Round(required))
 
 	ec2Svc := ec2.New(sess)
 
@@ -167,16 +171,16 @@ func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string
 	}
 
 	// Don't change spot fleet if it's already at TargetCapacity
-	if *spotFleetConfig.SpotFleetRequestConfig.TargetCapacity == count {
-		log.Printf("TargetCapacity is already at correct count")
+	if *spotFleetConfig.SpotFleetRequestConfig.TargetCapacity == requiredInt {
+		log.Printf("TargetCapacity is already at correct count of %d", requiredInt)
 		return nil
 	}
 
-	log.Printf("Modifying spotfleet %s, setting TargetCapacity=%d", spotFleet, count)
+	log.Printf("Modifying spotfleet %s, setting TargetCapacity=%d", spotFleet, requiredInt)
 
 	_, err = ec2Svc.ModifySpotFleetRequest(&ec2.ModifySpotFleetRequestInput{
 		SpotFleetRequestId: aws.String(spotFleet),
-		TargetCapacity:     aws.Int64(count),
+		TargetCapacity:     aws.Int64(requiredInt),
 	})
 	if err != nil {
 		return err
