@@ -12,6 +12,12 @@ RUN apk -v --update add \
     rm /var/cache/apk/*
 
 RUN curl -Lfs -o /usr/bin/sockguard \
-    https://github.com/buildkite/sockguard/releases/download/v1.0.0/sockguard-linux-amd64
+    https://github.com/buildkite/sockguard/releases/download/v1.0.0/sockguard-linux-amd64 \
+    && chmod +x /usr/bin/sockguard
 
+RUN curl -Lfs -o /usr/bin/ecs-run-task \
+    https://github.com/buildkite/ecs-run-task/releases/download/v1.2.0/ecs-run-task-linux-amd64 \
+    && chmod +x /usr/bin/ecs-run-task
+
+ENV BUILDKITE_BOOTSTRAP_SCRIPT_PATH=/buildkite/bootstrap.sh
 ADD bootstrap.sh /buildkite/bootstrap.sh

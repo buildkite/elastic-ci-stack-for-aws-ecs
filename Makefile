@@ -1,5 +1,4 @@
 .PHONY: sync lint validate docker
-
 VERSION=$(shell git describe --tags --candidates=1 --dirty 2>/dev/null \
 	|| printf "dev-%s" "$$(git rev-parse --short HEAD)")
 FLAGS=-s -w -X main.Version=$(VERSION)
@@ -18,7 +17,7 @@ clean:
 	-rm lambdas/ecs-spotfleet-scaler/handler
 
 %.zip: lambdas/%/handler
-	zip -j $@ "$<"
+	zip -9 -v -j $@ -i "$<"
 
 lambdas/ecs-service-scaler/handler: lambdas/ecs-service-scaler/main.go lambdas/ecs-service-scaler/go.sum
 	docker run \
@@ -43,7 +42,6 @@ sync: $(LAMBDAS)
 	aws s3 cp --acl public-read ecs-spotfleet-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
 
 docker:
-	docker pull buildkite/agent:3
 	docker build --tag "$(DOCKER_TAG)" ./docker
 
 lint:
