@@ -34,6 +34,9 @@ Parameters:
     Type: Number
     Default: 0
 
+  LambdaScheduleState:
+    Type: String
+    Default: "ENABLED"
 
 Conditions:
   HasLambdaObjectVersions: !Not [ !Equals [ !Ref LambdaObjectVersion, "latest" ] ]
@@ -193,7 +196,7 @@ Resources:
     Properties:
       Description: "ScheduledRule"
       ScheduleExpression: "rate(1 minute)"
-      State: "ENABLED"
+      State: !Ref LambdaScheduleState
       Targets:
         - Arn: !GetAtt ECSServiceScalerFunction.Arn
           Id: "TargetScalerFunction"

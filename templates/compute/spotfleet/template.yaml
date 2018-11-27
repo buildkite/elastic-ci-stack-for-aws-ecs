@@ -82,6 +82,10 @@ Parameters:
     Type: String
     Default: "latest"
 
+  LambdaScheduleState:
+    Type: String
+    Default: "ENABLED"
+
 Conditions:
   HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
 
@@ -319,7 +323,7 @@ Resources:
     Properties:
       Description: "ScheduledRule"
       ScheduleExpression: "rate(1 minute)"
-      State: "ENABLED"
+      State: !Ref LambdaScheduleState
       Targets:
         - Arn: !GetAtt ECSSpotFleetScalerFunction.Arn
           Id: "TargetECSMetricsFunction"
