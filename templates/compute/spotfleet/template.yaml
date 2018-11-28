@@ -15,37 +15,37 @@ Mappings:
 
     AWSRegionToAMI:
         us-east-2:
-            AMI: ami-028a9de0a7e353ed9
+            AMI: ami-037a92bf1efdb11a2
         us-east-1:
-            AMI: ami-00129b193dc81bc31
+            AMI: ami-0a6b7e0cc0b1f464f
         us-west-2:
-            AMI: ami-00d4f478
+            AMI: ami-0c1f4871ebaae6d86
         us-west-1:
-            AMI: ami-0d438d09af26c9583
+            AMI: ami-0184f498956de7db5
         eu-west-3:
-            AMI: ami-07da674f0655ef4e1
+            AMI: ami-0caadc4f0db31a303
         eu-west-2:
-            AMI: ami-a44db8c3
+            AMI: ami-0b5225210a12d9951
         eu-west-1:
-            AMI: ami-0af844a965e5738db
+            AMI: ami-0acc9f8be17a41897
         eu-central-1:
-            AMI: ami-0291ba887ba0d515f
+            AMI: ami-055aa9664ef169e25
         ap-northeast-2:
-            AMI: ami-047d2a61f94f862dc
+            AMI: ami-0bdc871079baf9649
         ap-northeast-1:
-            AMI: ami-0041c416aa23033a2
+            AMI: ami-0c38293d60d98af86
         ap-southeast-2:
-            AMI: ami-0092e55c70015d8c3
+            AMI: ami-0eed1c915ea891aca
         ap-southeast-1:
-            AMI: ami-091bf462afdb02c60
+            AMI: ami-0e28ff4e3f1776d86
         ca-central-1:
-            AMI: ami-192fa27d
+            AMI: ami-02c80e9173258d289
         ap-south-1:
-            AMI: ami-0c179ca015d301829
+            AMI: ami-0b7c3be99909df6ef
         sa-east-1:
-            AMI: ami-0018ff8ee48970ac3
+            AMI: ami-078146697425f25a7
         us-gov-est-1:
-            AMI: ami-c6079ba7
+            AMI: ami-31b5d150
 
 Parameters:
   VPC:
@@ -176,8 +176,22 @@ Resources:
       AWS::CloudFormation::Init:
         config:
           commands:
-            01_add_instance_to_cluster:
-                command: !Sub echo ECS_CLUSTER=${ECSCluster} > /etc/ecs/ecs.config
+            01_configure_ecs_agent:
+                command: !Sub |
+                  echo ECS_CLUSTER=${ECSCluster} > /etc/ecs/ecs.config
+                  echo ECS_DISABLE_PRIVILEGED=true >> /etc/ecs/ecs.config
+                  echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
+                  echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
+                  echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config
+            02_configure_firewall:
+                command: |
+                  yum install -y iptables-services
+                  iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
+                  sysctl -w net.ipv4.conf.all.route_localnet=1
+                  iptables -t nat -A PREROUTING -p tcp -d 169.254.170.2 --dport 80 -j DNAT --to-destination 127.0.0.1:51679
+                  iptables -t nat -A OUTPUT -d 169.254.170.2 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 51679
+                  iptables-save | tee /etc/sysconfig/iptables
+                  systemctl enable --now iptables
           files:
             "/etc/cfn/cfn-hup.conf":
               mode: 000400
