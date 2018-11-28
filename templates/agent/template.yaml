@@ -106,18 +106,12 @@ Resources:
       ExecutionRoleArn: !Ref ECSExecutionRole
       TaskRoleArn: !Ref ECSTaskRole
       Cpu: "512"
-      Memory: "1024"
-      Volumes:
-        - Name: "buildkite-builds"
-          Host:
-            SourcePath: "/buildkite/builds"
-        - Name: "docker-socket"
-          Host:
-            SourcePath: "/var/run/docker.sock"
+      Memory: "256"
       ContainerDefinitions:
         - Name: buildkite-agent
           Image: !Ref AgentDockerImage
           Essential: true
+          Command: ["buildkite-agent", "start"]
           Environment:
             - Name: BUILDKITE_AGENT_TOKEN
               Value: !Ref BuildkiteAgentToken
@@ -125,8 +119,6 @@ Resources:
               Value: !Sub "queue=${BuildkiteQueue}"
             - Name: BUILDKITE_BOOTSTRAP_DOCKER_IMAGE
               Value: !Ref AgentBootstrapDockerImage
-            - Name: BUILDKITE_BUILD_PATH
-              Value: "/buildkite/builds"
             - Name: BUILDKITE_ECS_RUN_LOG_GROUP
               Value: !Ref ECSRunTaskLogGroup
             - Name: AWS_REGION
@@ -139,11 +131,6 @@ Resources:
               "awslogs-group": !Ref ECSLogGroup
               "awslogs-region": !Ref AWS::Region
               "awslogs-stream-prefix": "agent"
-          MountPoints:
-            - ContainerPath: "/buildkite/builds"
-              SourceVolume: "buildkite-builds"
-            - ContainerPath: "/var/run/docker.sock"
-              SourceVolume: "docker-socket"
 
   ECSAgentService:
     Type: AWS::ECS::Service
