@@ -5,9 +5,10 @@ FLAGS=-s -w -X main.Version=$(VERSION)
 
 LAMBDA_S3_BUCKET := buildkite-aws-stack-ecs-dev
 LAMBDA_S3_BUCKET_PATH := /
-DOCKER_TAG := buildkite/agent-ecs
-
 LAMBDAS = ecs-service-scaler.zip ecs-spotfleet-scaler.zip
+
+DOCKER_AGENT_TAG := buildkite/agent-ecs
+DOCKER_SOCKGUARD_TAG := buildkite/sockguard-ecs
 
 build: $(LAMBDAS)
 
@@ -37,12 +38,22 @@ lambdas/ecs-spotfleet-scaler/handler: lambdas/ecs-spotfleet-scaler/main.go lambd
 		go build -ldflags="$(FLAGS)" -o handler .
 	chmod +x lambdas/ecs-spotfleet-scaler/handler
 
-sync: $(LAMBDAS)
+lambda-sync: $(LAMBDAS)
 	aws s3 cp --acl public-read ecs-service-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
 	aws s3 cp --acl public-read ecs-spotfleet-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
 
-docker:
-	docker build --tag "$(DOCKER_TAG)" ./docker
+docker: docker-agent docker-sockguard
+
+docker-agent:
+	docker build --tag "$(DOCKER_AGENT_TAG)" ./docker/buildkite-agent-ecs
+
+docker-sockguard:
+	cp $(GOPATH)/src/github.com/buildkite/sockguard/build/sockguard-linux-amd64 ./docker/sockguard-ecs/sockguard
+	docker build --tag "$(DOCKER_SOCKGUARD_TAG)" ./docker/sockguard-ecs
+
+docker-push:
+	docker push $(DOCKER_AGENT_TAG)
+	docker push $(DOCKER_SOCKGUARD_TAG)
 
 lint:
 	find templates -name '*.yaml' | xargs -n1 cfn-lint

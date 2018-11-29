@@ -17,6 +17,10 @@ Parameters:
     Type: String
     Default: "lox24/buildkite-agent-ecs"
 
+  SockguardDockerImage:
+    Type: String
+    Default: "lox24/sockguard-ecs"
+
   ECSCluster:
     Description: The name of the ECS cluster to create a service on
     Type: String
@@ -68,12 +72,43 @@ Resources:
               Value: !Sub "queue=${BuildkiteQueue}"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
+            - Name: DOCKER_HOST
+              Value: "unix:///var/run/sockguard/docker.sock"
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
               "awslogs-group": !Ref ECSLogGroup
               "awslogs-region": !Ref AWS::Region
               "awslogs-stream-prefix": "agent"
+          MountPoints:
+            - SourceVolume: sockguard-sock
+              ContainerPath: /var/run/sockguard
+            - SourceVolume: buildkite-builds
+              ContainerPath: /buildkite/builds
+        - Name: sockguard
+          Image: !Ref SockguardDockerImage
+          Essential: false
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              "awslogs-group": !Ref ECSLogGroup
+              "awslogs-region": !Ref AWS::Region
+              "awslogs-stream-prefix": "sockguard"
+          MountPoints:
+            - SourceVolume: docker-sock
+              ContainerPath: /var/run/docker.sock
+            - SourceVolume: sockguard-sock
+              ContainerPath: /var/run/sockguard
+      Volumes:
+        - Name: docker-sock
+          Host:
+            SourcePath: /var/run/docker.sock
+        - Name: buildkite-builds
+          Host:
+            SourcePath: /buildkite/builds
+        - Name: sockguard-sock
+          DockerVolumeConfiguration:
+            Scope: task
 
   ECSAgentService:
     Type: AWS::ECS::Service
