@@ -1,4 +1,4 @@
-Description: VPC with either public or private subnets
+Description: VPC for Buildkite Elastic Stack
 
 Parameters:
   AvailabilityZones:

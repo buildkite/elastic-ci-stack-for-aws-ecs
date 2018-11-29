@@ -1,17 +1,15 @@
 ---
-Description: Spot Fleet for ECS
+Description: Spot Fleet for Buildkite Elastic Stack
 
 Mappings:
-    # These are the latest ECS optimized AMIs as of August 2018:
+    # These are the latest ECS optimized AMIs as of November 2018:
     #
-    #   amzn-ami-2018.03.e-amazon-ecs-optimized
-    #   ECS agent:    1.20.1
-    #   Docker:       18.03.1-ce
-    #   ecs-init:     1.20.1-1
+    #   amzn2-ami-ecs-hvm-2.0.20181112-x86_64-ebs
+    #   ECS agent:    1.22.0
+    #   Docker:       18.06.1-ce
+    #   ecs-init:     1.22.0-1
     #
-    # You can find the latest available on this page of our documentation:
-    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
-    # (note the AMI identifier is region specific)
+    # See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/al2ami.html
 
     AWSRegionToAMI:
         us-east-2:
@@ -56,16 +54,12 @@ Parameters:
     Description: The subnets of a VPC to deploy SpotFleet into
     Type: List<AWS::EC2::Subnet::Id>
 
-  ECSCluster:
-    Description: The ECS Cluster to register with
-    Type: String
-
-  MaxCapacity:
+  MaxSize:
     Description: The maximum capacity for the Spot fleet
     Type: Number
     Default: 50
 
-  MinCapacity:
+  MinSize:
     Description: The minimum capacity for the Spot fleet
     Type: Number
     Default: 0
@@ -78,18 +72,12 @@ Parameters:
     Type: String
     Default: "buildkite-aws-stack-ecs-dev"
 
-  LambdaObjectVersion:
-    Type: String
-    Default: "latest"
-
   LambdaScheduleState:
     Type: String
     Default: "ENABLED"
 
 Conditions:
   HasKeyName: !Not [ !Equals [ !Ref KeyName, "" ] ]
-
-  HasLambdaObjectVersions: !Not [ !Equals [ !Ref LambdaObjectVersion, "latest" ] ]
 
 Resources:
   ECSSecurityGroup:
@@ -236,7 +224,7 @@ Resources:
       SpotFleetRequestConfigData:
         AllocationStrategy: lowestPrice
         IamFleetRole: !GetAtt SpotFleetIAMRole.Arn
-        TargetCapacity: !Ref MinCapacity
+        TargetCapacity: !Ref MinSize
         ReplaceUnhealthyInstances: true
         TerminateInstancesWithExpiration: true
         LaunchTemplateConfigs:
@@ -297,7 +285,30 @@ Resources:
                 InstanceType: m4.4xlarge
                 SubnetId: !Join [ ',', !Ref Subnets ]
 
-  LambdaExecutionRole:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref AWS::StackName
+
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: !Ref LambdaScheduleState
+      Targets:
+        - Arn: !GetAtt ECSSpotFleetScalerFunction.Arn
+          Id: "ECSSpotFleetScalerFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref ECSSpotFleetScalerFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
+
+  ECSSpotFleetScalerLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       Path: "/"
@@ -332,24 +343,6 @@ Resources:
                 - ec2:ModifySpotFleetRequest
               Resource: '*'
 
-  ScheduledRule:
-    Type: "AWS::Events::Rule"
-    Properties:
-      Description: "ScheduledRule"
-      ScheduleExpression: "rate(1 minute)"
-      State: !Ref LambdaScheduleState
-      Targets:
-        - Arn: !GetAtt ECSSpotFleetScalerFunction.Arn
-          Id: "TargetECSMetricsFunction"
-
-  PermissionForEventsToInvokeLambda:
-    Type: "AWS::Lambda::Permission"
-    Properties:
-      FunctionName: !Ref ECSSpotFleetScalerFunction
-      Action: "lambda:InvokeFunction"
-      Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt ScheduledRule.Arn
-
   # This mirrors the group that would be created by the lambda, but enforces
   # a retention period and also ensures it's removed when the stack is removed
   ECSSpotFleetScalerLogGroup:
@@ -364,20 +357,25 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-spotfleet-scaler.zip"
-        S3ObjectVersion: !If [HasLambdaObjectVersions, !Ref LambdaObjectVersion, !Ref "AWS::NoValue"]
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt ECSSpotFleetScalerLambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
       Runtime: go1.x
       MemorySize: 128
       Environment:
         Variables:
-          BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
-          BUILDKITE_SPOT_FLEET: !Ref SpotFleet
-          LAMBDA_TIMEOUT: 1m
+          ECS_CLUSTER:     !Ref ECSCluster
+          SPOT_FLEET:      !Ref SpotFleet
+          MIN_SIZE:        !Ref MinSize
+          MAX_SIZE:        !Ref MaxSize
+          LAMBDA_TIMEOUT:  1m
           LAMBDA_INTERVAL: 20s
 
 Outputs:
   SpotFleet:
     Description: The SpotFleet created
     Value: !Ref SpotFleet
+
+  ECSCluster:
+    Description: The ECS Cluster created
+    Value: !Ref ECSCluster

@@ -60,8 +60,27 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 		timeout = time.After(timeoutDuration)
 	}
 
-	clusterName := os.Getenv(`BUILDKITE_ECS_CLUSTER`)
-	spotFleet := os.Getenv(`BUILDKITE_SPOT_FLEET`)
+	var conf = config {
+		ECSCluster: os.Getenv(`ECS_CLUSTER`),
+		SpotFleetRequestId: os.Getenv(`SPOT_FLEET`),
+	}
+
+	if ms := os.Getenv(`MIN_SIZE`); ms != "" {
+		var err error
+		conf.MinSize, err = strconv.ParseInt(ms, 10, 32)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse MIN_SIZE: %v", err)
+		}
+	}
+
+	if ms := os.Getenv(`MAX_SIZE`); ms != "" {
+		var err error
+		conf.MaxSize, err = strconv.ParseInt(ms, 10, 32)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse MAX_SIZE: %v", err)
+		}
+	}
+
 	sess := session.New()
 
 	for {
@@ -69,7 +88,7 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 		case <-timeout:
 			return "", nil
 		default:
-			err := scaleSpotFleetCapacity(sess, clusterName, spotFleet)
+			err := scaleSpotFleetCapacity(sess, conf)
 			if err != nil {
 				log.Printf("Err: %#v", err.Error())
 				return "", nil
@@ -81,17 +100,23 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 	}
 }
 
-func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string) error {
+type config struct {
+	ECSCluster string
+	SpotFleetRequestId string
+	MinSize, MaxSize int64
+}
+
+func scaleSpotFleetCapacity(sess *session.Session, config config) error {
 	svc := ecs.New(sess)
 	listServicesOutput, err := svc.ListServices(&ecs.ListServicesInput{
-		Cluster: aws.String(clusterName),
+		Cluster: aws.String(config.ECSCluster),
 	})
 	if err != nil {
 		return err
 	}
 
 	describeServicesOutput, err := svc.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster:  aws.String(clusterName),
+		Cluster:  aws.String(config.ECSCluster),
 		Services: listServicesOutput.ServiceArns,
 	})
 	if err != nil {
@@ -146,7 +171,7 @@ func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string
 
 	describeSpotFleetOutput, err := ec2Svc.DescribeSpotFleetRequests(&ec2.DescribeSpotFleetRequestsInput{
 		SpotFleetRequestIds: []*string{
-			aws.String(spotFleet),
+			aws.String(config.SpotFleetRequestId),
 		},
 	})
 	if err != nil {
@@ -154,13 +179,13 @@ func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string
 	}
 
 	if len(describeSpotFleetOutput.SpotFleetRequestConfigs) == 0 {
-		return fmt.Errorf("No spot fleet found for %s", spotFleet)
+		return fmt.Errorf("No spot fleet found for %s", config.SpotFleetRequestId)
 	}
 
 	spotFleetConfig := describeSpotFleetOutput.SpotFleetRequestConfigs[0]
 
 	log.Printf("Spotfleet %s has target=%d",
-		spotFleet,
+		config.SpotFleetRequestId,
 		*spotFleetConfig.SpotFleetRequestConfig.TargetCapacity,
 	)
 
@@ -170,16 +195,22 @@ func scaleSpotFleetCapacity(sess *session.Session, clusterName, spotFleet string
 		return nil
 	}
 
+	if requiredInt < config.MinSize {
+		log.Printf("Adjusting count to maintain minimum size of %d, would have been %d",
+			config.MinSize, requiredInt)
+			requiredInt = config.MinSize
+	}
+
 	// Don't change spot fleet if it's already at TargetCapacity
 	if *spotFleetConfig.SpotFleetRequestConfig.TargetCapacity == requiredInt {
 		log.Printf("TargetCapacity is already at correct count of %d", requiredInt)
 		return nil
 	}
 
-	log.Printf("Modifying spotfleet %s, setting TargetCapacity=%d", spotFleet, requiredInt)
+	log.Printf("Modifying spotfleet %s, setting TargetCapacity=%d", config.SpotFleetRequestId, requiredInt)
 
 	_, err = ec2Svc.ModifySpotFleetRequest(&ec2.ModifySpotFleetRequestInput{
-		SpotFleetRequestId: aws.String(spotFleet),
+		SpotFleetRequestId: aws.String(config.SpotFleetRequestId),
 		TargetCapacity:     aws.Int64(requiredInt),
 	})
 	if err != nil {

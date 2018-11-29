@@ -1,5 +1,5 @@
 ---
-Description: Buildkite Elastic Stack for AWS ECS
+Description: Agent Service for Buildkite Elastic Stack
 
 Parameters:
   BuildkiteAgentToken:
@@ -13,33 +13,21 @@ Parameters:
     Default: default
     MinLength: 1
 
-  LambdaBucket:
-    Type: String
-    Default: "buildkite-aws-stack-ecs-dev"
-
-  LambdaObjectVersion:
-    Type: String
-    Default: "latest"
-
   AgentDockerImage:
     Type: String
     Default: "lox24/buildkite-agent-ecs"
 
-  AgentBootstrapDockerImage:
+  ECSCluster:
+    Description: The name of the ECS cluster to create a service on
     Type: String
-    Default: "lox24/buildkite-agent-ecs"
 
-  MinSize:
-    Description: Minimum number of agents to have running
-    Type: Number
-    Default: 0
+  LambdaBucket:
+    Type: String
+    Default: "buildkite-aws-stack-ecs-dev"
 
   LambdaScheduleState:
     Type: String
     Default: "ENABLED"
-
-Conditions:
-  HasLambdaObjectVersions: !Not [ !Equals [ !Ref LambdaObjectVersion, "latest" ] ]
 
 Resources:
   ECSExecutionRole:
@@ -56,75 +44,30 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
-  ECSTaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ECSRunTask
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-            - Effect: Allow
-              Action:
-                - ecs:RegisterTaskDefinition
-                - ecs:RunTask
-                - ecs:DescribeTasks
-                - logs:DescribeLogGroups
-                - logs:DescribeLogStreams
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-                - logs:FilterLogEvents
-              Resource: '*'
-
   ECSLogGroup:
     Type: "AWS::Logs::LogGroup"
     Properties:
       RetentionInDays: 7
-
-  ECSRunTaskLogGroup:
-    Type: "AWS::Logs::LogGroup"
-    Properties:
-      RetentionInDays: 1
-
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Ref AWS::StackName
 
   ECSAgentTaskDefinition:
     Type: "AWS::ECS::TaskDefinition"
     Properties:
       NetworkMode: bridge
       ExecutionRoleArn: !Ref ECSExecutionRole
-      TaskRoleArn: !Ref ECSTaskRole
       Cpu: "512"
       Memory: "256"
       ContainerDefinitions:
         - Name: buildkite-agent
           Image: !Ref AgentDockerImage
           Essential: true
-          Command: ["buildkite-agent", "start"]
+          Command: ["start"]
           Environment:
             - Name: BUILDKITE_AGENT_TOKEN
               Value: !Ref BuildkiteAgentToken
             - Name: BUILDKITE_AGENT_TAGS
               Value: !Sub "queue=${BuildkiteQueue}"
-            - Name: BUILDKITE_BOOTSTRAP_DOCKER_IMAGE
-              Value: !Ref AgentBootstrapDockerImage
-            - Name: BUILDKITE_ECS_RUN_LOG_GROUP
-              Value: !Ref ECSRunTaskLogGroup
             - Name: AWS_REGION
               Value: !Ref AWS::Region
-            - Name: ECS_CLUSTER
-              Value: !Ref ECSCluster
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
@@ -136,13 +79,31 @@ Resources:
     Type: AWS::ECS::Service
     Properties:
       Cluster: !Ref ECSCluster
-      DesiredCount: !Ref MinSize
+      DesiredCount: 0
       TaskDefinition: !Ref ECSAgentTaskDefinition
       PlacementStrategies:
         - Type: binpack
           Field: cpu
 
-  LambdaExecutionRole:
+  ScheduledRule:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(1 minute)"
+      State: !Ref LambdaScheduleState
+      Targets:
+        - Arn: !GetAtt ECSServiceScalerFunction.Arn
+          Id: "ECSServiceScalerFunction"
+
+  PermissionForEventsToInvokeLambda:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: !Ref ECSServiceScalerFunction
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ScheduledRule.Arn
+
+  ECSServiceScalerLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       Path: "/"
@@ -165,9 +126,7 @@ Resources:
             - Effect: Allow
               Action:
                 - ecs:Describe*
-              Resource:
-                - !Ref ECSAgentService
-                - !GetAtt ECSCluster.Arn
+              Resource: '*'
         - PolicyName: UpdateECSService
           PolicyDocument:
             Version: '2012-10-17'
@@ -177,24 +136,6 @@ Resources:
                 - ecs:UpdateService
                 - ecs:DescribeServices
               Resource: '*'
-
-  ScheduledRule:
-    Type: "AWS::Events::Rule"
-    Properties:
-      Description: "ScheduledRule"
-      ScheduleExpression: "rate(1 minute)"
-      State: !Ref LambdaScheduleState
-      Targets:
-        - Arn: !GetAtt ECSServiceScalerFunction.Arn
-          Id: "TargetScalerFunction"
-
-  PermissionForEventsToInvokeLambda:
-    Type: "AWS::Lambda::Permission"
-    Properties:
-      FunctionName: { Ref: ECSServiceScalerFunction }
-      Action: "lambda:InvokeFunction"
-      Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt ScheduledRule.Arn
 
   # This mirrors the group that would be created by the lambda, but enforces
   # a retention period and also ensures it's removed when the stack is removed
@@ -210,8 +151,7 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-service-scaler.zip"
-        S3ObjectVersion: !If [HasLambdaObjectVersions, !Ref LambdaObjectVersion, !Ref "AWS::NoValue"]
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt ECSServiceScalerLambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
       Runtime: go1.x
@@ -220,17 +160,12 @@ Resources:
         Variables:
           BUILDKITE_TOKEN: !Ref BuildkiteAgentToken
           BUILDKITE_QUEUE: !Ref BuildkiteQueue
-          BUILDKITE_ECS_CLUSTER: !Ref ECSCluster
-          BUILDKITE_ECS_SERVICE: !Ref ECSAgentService
-          BUILDKITE_MIN_SIZE: !Ref MinSize
-          LAMBDA_TIMEOUT: 1m
+          ECS_CLUSTER:     !Ref ECSCluster
+          ECS_SERVICE:     !Ref ECSAgentService
+          LAMBDA_TIMEOUT:  1m
           LAMBDA_INTERVAL: 10s
 
 Outputs:
-  Cluster:
-    Description: A reference to the ECS cluster
-    Value: !Ref ECSCluster
-
   AgentService:
     Description: The ECS Service for the Agent
     Value: !Ref ECSAgentService

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -59,13 +58,19 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 	}
 
 	sess := session.New()
+	conf := config{
+		BuildkiteToken: os.Getenv(`BUILDKITE_TOKEN`),
+		BuildkiteQueue: os.Getenv(`BUILDKITE_QUEUE`),
+		ECSCluster: os.Getenv(`ECS_CLUSTER`),
+		ECSService: os.Getenv(`ECS_SERVICE`),
+	}
 
 	for {
 		select {
 		case <-timeout:
 			return "", nil
 		default:
-			err := scaleECSServiceCapacity(sess)
+			err := scaleECSServiceCapacity(sess, conf)
 			if err != nil {
 				log.Printf("Err: %#v", err.Error())
 				return "", nil
@@ -77,31 +82,26 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 	}
 }
 
-func scaleECSServiceCapacity(sess *session.Session) error {
-	client := newBuildkiteClient(os.Getenv(`BUILDKITE_TOKEN`))
-	count, err := client.GetScheduledJobCount(os.Getenv(`BUILDKITE_QUEUE`))
+type config struct {
+	BuildkiteToken string
+	BuildkiteQueue string
+	ECSCluster string
+	ECSService string
+}
+
+func scaleECSServiceCapacity(sess *session.Session, config config) error {
+	client := newBuildkiteClient(config.BuildkiteToken)
+	count, err := client.GetScheduledJobCount(config.BuildkiteQueue)
 	if err != nil {
 		return err
-	}
-
-	cluster := os.Getenv(`BUILDKITE_ECS_CLUSTER`)
-	service := os.Getenv(`BUILDKITE_ECS_SERVICE`)
-
-	var minSize int64
-	if ms := os.Getenv(`BUILDKITE_MIN_SIZE`); ms != "" {
-		var err error
-		minSize, err = strconv.ParseInt(ms, 10, 32)
-		if err != nil {
-			return fmt.Errorf("failed to parse BUILDKITE_MIN_SIZE: %v", err)
-		}
 	}
 
 	svc := ecs.New(sess)
 
 	result, err := svc.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster:      aws.String(cluster),
+		Cluster:      aws.String(config.ECSCluster),
 		Services: []*string{
-			aws.String(service),
+			aws.String(config.ECSService),
 		},
 	})
 	if err != nil {
@@ -113,16 +113,10 @@ func scaleECSServiceCapacity(sess *session.Session) error {
 		return nil
 	}
 
-	if count < minSize {
-		log.Printf("Adjusting count to maintain minimum size of %d, would have been %d", 
-			minSize, count)
-		count = minSize
-	}
-
-	log.Printf("Modifying service %s, setting count=%d", service, count)
+	log.Printf("Modifying service %s, setting count=%d", config.ECSService, count)
 	_, err = svc.UpdateService(&ecs.UpdateServiceInput{
-		Cluster:      aws.String(cluster),
-		Service:      aws.String(service),
+		Cluster:      aws.String(config.ECSCluster),
+		Service:      aws.String(config.ECSService),
 		DesiredCount: aws.Int64(count),
 	})
 	if err != nil {
