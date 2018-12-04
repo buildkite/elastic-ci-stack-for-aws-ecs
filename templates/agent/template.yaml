@@ -29,6 +29,10 @@ Parameters:
     Type: String
     Default: "buildkite-aws-stack-ecs-dev"
 
+  LambdaObjectVersion:
+    Type: String
+    Default: "lchVXD3k4LiZ25f1PPvWqqOhY7naHHnY"
+
   LambdaScheduleState:
     Type: String
     Default: "ENABLED"
@@ -186,6 +190,7 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-service-scaler.zip"
+        S3ObjectVersion: !Ref LambdaObjectVersion
       Role: !GetAtt ECSServiceScalerLambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler

@@ -57,12 +57,20 @@ func Handler(ctx context.Context, evt json.RawMessage) (string, error) {
 		timeout = time.After(timeoutDuration)
 	}
 
+	var mustGetEnv = func(env string) string {
+		val := os.Getenv(env)	
+		if val == "" {
+			panic(fmt.Sprintf("Env %q not set", env))
+		}
+		return val
+	}
+
 	sess := session.New()
 	conf := config{
-		BuildkiteToken: os.Getenv(`BUILDKITE_TOKEN`),
-		BuildkiteQueue: os.Getenv(`BUILDKITE_QUEUE`),
-		ECSCluster: os.Getenv(`ECS_CLUSTER`),
-		ECSService: os.Getenv(`ECS_SERVICE`),
+		BuildkiteToken: mustGetEnv(`BUILDKITE_TOKEN`),
+		BuildkiteQueue: mustGetEnv(`BUILDKITE_QUEUE`),
+		ECSCluster: mustGetEnv(`ECS_CLUSTER`),
+		ECSService: mustGetEnv(`ECS_SERVICE`),
 	}
 
 	for {

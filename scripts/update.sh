@@ -1,14 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-STACK_SUFFIX=dev
+SPOT_FLEET_STACK=${SPOT_FLEET_STACK:-buildkite-spotfleet}
+AGENT_STACK=${AGENT_STACK:-"buildkite-agent-default"}
 
 echo '--- Updating spotfleet stack'
 parfait update-stack \
   -t templates/compute/spotfleet/template.yaml \
-  buildkite-spotfleet-${STACK_SUFFIX}
+  "${SPOT_FLEET_STACK}"
 
 echo '--- Updating agent stack'
 parfait update-stack \
   -t templates/agent/template.yaml \
-  buildkite-agent-${STACK_SUFFIX}
+  "${AGENT_STACK}"

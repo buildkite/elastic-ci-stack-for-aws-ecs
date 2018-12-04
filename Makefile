@@ -18,29 +18,39 @@ clean:
 	-rm lambdas/ecs-spotfleet-scaler/handler
 
 %.zip: lambdas/%/handler
-	zip -9 -v -j $@ -i "$<"
+	zip -9 -v -j $@ "$<"
 
-lambdas/ecs-service-scaler/handler: lambdas/ecs-service-scaler/main.go lambdas/ecs-service-scaler/go.sum
+lambdas/ecs-service-scaler/handler: lambdas/ecs-service-scaler/main.go
 	docker run \
-		--volume module_cache:/go/pkg/mod \
-		--volume $(PWD)/lambdas/ecs-service-scaler:/lambda \
-		--workdir /lambda \
+		--volume go-module-cache:/go/pkg/mod \
+		--volume $(PWD):/code \
+		--workdir /code \
 		--rm golang:1.11 \
-		go build -ldflags="$(FLAGS)" -o handler .
+		go build -ldflags="$(FLAGS)" -o ./lambdas/ecs-service-scaler/handler ./lambdas/ecs-service-scaler
 	chmod +x lambdas/ecs-service-scaler/handler
 
-lambdas/ecs-spotfleet-scaler/handler: lambdas/ecs-spotfleet-scaler/main.go lambdas/ecs-spotfleet-scaler/go.sum
+lambdas/ecs-spotfleet-scaler/handler: lambdas/ecs-spotfleet-scaler/main.go
 	docker run \
-		--volume module_cache:/go/pkg/mod \
-		--volume $(PWD)/lambdas/ecs-spotfleet-scaler:/lambda \
-		--workdir /lambda \
+		--volume go-module-cache:/go/pkg/mod \
+		--volume $(PWD):/code \
+		--workdir /code \
 		--rm golang:1.11 \
-		go build -ldflags="$(FLAGS)" -o handler .
+		go build -ldflags="$(FLAGS)" -o ./lambdas/ecs-spotfleet-scaler/handler ./lambdas/ecs-spotfleet-scaler
 	chmod +x lambdas/ecs-spotfleet-scaler/handler
 
 lambda-sync: $(LAMBDAS)
-	aws s3 cp --acl public-read ecs-service-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
-	aws s3 cp --acl public-read ecs-spotfleet-scaler.zip s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
+	aws s3 sync \
+		--acl public-read \
+		--exclude '*' --include '*.zip' \
+		. s3://$(LAMBDA_S3_BUCKET)$(LAMBDA_S3_BUCKET_PATH)
+
+lambda-versions:
+	aws s3api head-object \
+		--bucket ${LAMBDA_S3_BUCKET} \
+		--key ecs-spotfleet-scaler.zip --query "VersionId" --output text
+	aws s3api head-object \
+		--bucket ${LAMBDA_S3_BUCKET} \
+		--key ecs-service-scaler.zip --query "VersionId" --output text
 
 docker: docker-agent docker-sockguard
 

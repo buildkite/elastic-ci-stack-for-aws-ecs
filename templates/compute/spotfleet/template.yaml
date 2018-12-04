@@ -72,6 +72,10 @@ Parameters:
     Type: String
     Default: "buildkite-aws-stack-ecs-dev"
 
+  LambdaObjectVersion:
+    Type: String
+    Default: "O0jD5bCyKJVGaxJTb8TrELspyYBqgB50"
+
   LambdaScheduleState:
     Type: String
     Default: "ENABLED"
@@ -357,6 +361,7 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaBucket
         S3Key: "ecs-spotfleet-scaler.zip"
+        S3ObjectVersion: !Ref LambdaObjectVersion
       Role: !GetAtt ECSSpotFleetScalerLambdaExecutionRole.Arn
       Timeout: 120
       Handler: handler
