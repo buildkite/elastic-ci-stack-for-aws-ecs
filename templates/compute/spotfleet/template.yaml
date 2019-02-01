@@ -74,7 +74,7 @@ Parameters:
 
   LambdaObjectVersion:
     Type: String
-    Default: "O0jD5bCyKJVGaxJTb8TrELspyYBqgB50"
+    Default: "zLuyHtrJoI4cmW0ncXb5eEpUTdjvgwXS"
 
   LambdaScheduleState:
     Type: String
@@ -171,7 +171,7 @@ Resources:
             01_configure_ecs_agent:
                 command: !Sub |
                   echo ECS_CLUSTER=${ECSCluster} > /etc/ecs/ecs.config
-                  echo ECS_DISABLE_PRIVILEGED=true >> /etc/ecs/ecs.config
+                  echo ECS_DISABLE_PRIVILEGED=false >> /etc/ecs/ecs.config
                   echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
                   echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
                   echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config

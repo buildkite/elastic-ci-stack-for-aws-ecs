@@ -17,9 +17,9 @@ Parameters:
     Type: String
     Default: "lox24/buildkite-agent-ecs"
 
-  SockguardDockerImage:
+  DockerImage:
     Type: String
-    Default: "lox24/sockguard-ecs"
+    Default: "docker:stable-dind"
 
   ECSCluster:
     Description: The name of the ECS cluster to create a service on
@@ -31,7 +31,7 @@ Parameters:
 
   LambdaObjectVersion:
     Type: String
-    Default: "lchVXD3k4LiZ25f1PPvWqqOhY7naHHnY"
+    Default: "naqG4Q5Li7Q03hH_OGEKAHc7pKCn2g3A"
 
   LambdaScheduleState:
     Type: String
@@ -76,8 +76,6 @@ Resources:
               Value: !Sub "queue=${BuildkiteQueue}"
             - Name: AWS_REGION
               Value: !Ref AWS::Region
-            - Name: DOCKER_HOST
-              Value: "unix:///var/run/sockguard/docker.sock"
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
@@ -85,24 +83,22 @@ Resources:
               "awslogs-region": !Ref AWS::Region
               "awslogs-stream-prefix": "agent"
           MountPoints:
-            - SourceVolume: sockguard-sock
-              ContainerPath: /var/run/sockguard
+            - SourceVolume: docker-sock
+              ContainerPath: /var/run/docker.sock
             - SourceVolume: buildkite-builds
               ContainerPath: /buildkite/builds
-        - Name: sockguard
-          Image: !Ref SockguardDockerImage
+        - Name: docker
+          Image: !Ref DockerImage
           Essential: false
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
               "awslogs-group": !Ref ECSLogGroup
               "awslogs-region": !Ref AWS::Region
-              "awslogs-stream-prefix": "sockguard"
+              "awslogs-stream-prefix": "docker"
           MountPoints:
             - SourceVolume: docker-sock
               ContainerPath: /var/run/docker.sock
-            - SourceVolume: sockguard-sock
-              ContainerPath: /var/run/sockguard
       Volumes:
         - Name: docker-sock
           Host:
@@ -110,9 +106,6 @@ Resources:
         - Name: buildkite-builds
           Host:
             SourcePath: /buildkite/builds
-        - Name: sockguard-sock
-          DockerVolumeConfiguration:
-            Scope: task
 
   ECSAgentService:
     Type: AWS::ECS::Service
