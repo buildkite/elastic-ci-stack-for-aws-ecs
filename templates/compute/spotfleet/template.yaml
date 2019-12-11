@@ -114,7 +114,7 @@ Resources:
         }
       Path: /
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
 
   ECSRole:
     Type: AWS::IAM::Role
