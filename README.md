@@ -1,6 +1,8 @@
 # Elastic CI Stack for AWS: ECS Edition (2 elastic 2 stack)
 
-This is an **experimental version** of our main [AWS stack](https://github.com/buildkite/elastic-ci-stack-for-aws) that makes use of ECS and Spot Fleets.
+This was an **experimental version** of our main [AWS stack](https://github.com/buildkite/elastic-ci-stack-for-aws) that makes use of ECS and Spot Fleets.
+
+If you are using this stack, please reach out: support@buildkite.com
 
 ## Design Goals
 
